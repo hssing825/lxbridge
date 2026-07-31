@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>首页 - {{PLUGIN_NAME}}</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><text y='20' font-size='20'>🎵</text></svg>">
+<!-- 防主题闪烁：body渲染前立即设置主题 -->
+<script>(function(){var t=localStorage.getItem('lx-theme')||'auto';if(t==='auto'){var d=window.matchMedia('(prefers-color-scheme: dark)').matches;document.documentElement.setAttribute('data-theme',d?'dark':'light')}else{document.documentElement.setAttribute('data-theme',t)}})()</script>
+<script>window.__PLUGIN_NAME__ = {{PLUGIN_NAME_JSON}};</script>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<!-- ===== MIoT 未安装全屏引导 ===== -->
+<div class="miot-warn-overlay" id="miotWarnOverlay" style="display:none;">
+  <div class="miot-warn-icon">⚠️</div>
+  <h2>需要安装 MIoT 智能音箱插件</h2>
+  <p>Songloft-LX 依赖 MIoT 智能音箱投放插件来连接和控制小爱音响。<br>请先在 Songloft 插件市场安装并配置 MIoT 插件。</p>
+  <div class="steps">
+    <div class="miot-warn-step"><div class="step-num">1</div><h4>安装 MIoT 插件</h4><p>在 Songloft 插件市场中搜索"智能音箱"安装</p></div>
+    <div class="miot-warn-step"><div class="step-num">2</div><h4>配置小米账号</h4><p>登录小米账号，绑定小爱音响设备</p></div>
+    <div class="miot-warn-step"><div class="step-num">3</div><h4>回到本插件</h4><p>刷新页面，开始使用 Songloft-LX</p></div>
+  </div>
+  <button class="btn btn-secondary" style="margin-top:16px;" onclick="dismissMiotWarn()">稍后再说</button>
+</div>
+
+<!-- ===== 吸顶导航栏 ===== -->
+<header class="topbar">
+  <!-- 移动端汉堡菜单按钮 -->
+  <button class="hamburger-btn" id="hamburgerBtn" onclick="App.toggleSidebar()" aria-label="菜单">
+    <span></span>
+    <span></span>
+    <span></span>
+  </button>
+
+  <div class="topbar-logo">
+    <svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>
+    <span>{{PLUGIN_NAME}}</span><span class="topbar-ver">v{{VERSION}}</span>
+  </div>
+
+  <span class="miot-status" id="miotBadge">⏳ 检测中...</span>
+  <span class="topbar-spacer"></span>
+
+  <button class="topbar-btn topbar-desktop" onclick="App.toggleTimeline()" title="时间线视图">🕐</button>
+  <button class="topbar-btn topbar-desktop" onclick="App.toggleLogPanel()" title="日志面板">📊</button>
+
+  <div class="device-switcher" id="deviceSwitcher">
+    <button class="device-btn" onclick="App.toggleDeviceDropdown()">
+      <span class="dot" id="deviceDot"></span>
+      <span id="currentDeviceName">未选择设备</span>
+      <span class="arrow">▼</span>
+    </button>
+    <div class="device-dropdown" id="deviceDropdown"></div>
+  </div>
+
+  <div class="theme-wrap">
+    <button class="topbar-btn theme-btn" onclick="App.toggleThemeDropdown()" id="themeBtn">🎨</button>
+    <div class="theme-dropdown" id="themeDropdown">
+      <div class="theme-item active" data-theme="auto" onclick="App.setTheme('auto', this)">🖥 跟随系统</div>
+      <div class="theme-item" data-theme="light" onclick="App.setTheme('light', this)">☀️ 浅色</div>
+      <div class="theme-item" data-theme="dark" onclick="App.setTheme('dark', this)">🌙 深色</div>
+    </div>
+  </div>
+
+  <!-- 移动端更多菜单（最右侧） -->
+  <div class="mobile-more-wrap">
+    <button class="topbar-btn mobile-more-btn" onclick="App.toggleMobileMore()" title="更多">⋯</button>
+    <div class="mobile-more-dropdown" id="mobileMoreDropdown">
+      <div class="mobile-more-item" onclick="App.toggleTimeline();App.toggleMobileMore()">🕐 时间线视图</div>
+      <div class="mobile-more-item" onclick="App.toggleLogPanel();App.toggleMobileMore()">📊 日志面板</div>
+      <div class="mobile-more-item" onclick="App.cycleTheme();App.toggleMobileMore()">🎨 切换主题</div>
+    </div>
+  </div>
+</header>
+
+<!-- ===== 主布局 ===== -->
+<div class="main-wrap">
+  <!-- 移动端遮罩层 -->
+  <div class="sidebar-overlay" id="sidebarOverlay" onclick="App.closeSidebar()"></div>
+
+  <!-- 侧边栏 -->
+  <nav class="sidebar" id="sidebar">
+    <button class="nav-item active" data-page="home" onclick="App.switchPage('home', this)">🏠 首页</button>
+    <button class="nav-item" data-page="search" onclick="App.switchPage('search', this)">🔍 搜索</button>
+    <button class="nav-item" data-page="songlists" onclick="App.switchPage('songlists', this)">📋 歌单</button>
+    <button class="nav-item" data-page="leaderboard" onclick="App.switchPage('leaderboard', this)">🏆 排行榜</button>
+    <button class="nav-item" data-page="favorites" onclick="App.switchPage('favorites', this)">⭐ 收藏</button>
+    <button class="nav-item" data-page="history" onclick="App.switchPage('history', this)">📜 历史</button>
+    <div class="sidebar-section">配置</div>
+    <button class="nav-item" data-page="settings" onclick="App.switchPage('settings', this)">⚙ 设置</button>
+    <button class="nav-item" data-page="about" onclick="App.switchPage('about', this)">ℹ️ 关于</button>
+  </nav>
+
+  <!-- 内容区 -->
+  <main class="content" id="contentArea">
+
+    <!-- 首页 -->
+    <div class="page active" id="page-home">
+      <div class="search-box" style="max-width:100%;margin-bottom:12px;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="text" placeholder="搜索歌曲..." id="homeSearchInput" onkeydown="if(event.key==='Enter'){App.searchFromHome(this.value);}">
+      </div>
+      <div class="home-hot-tags" id="homeHotTags" style="margin-bottom:16px;display:flex;flex-wrap:wrap;gap:6px;"></div>
+      <div id="homeContent"></div>
+    </div>
+
+    <!-- 搜索页 -->
+    <div class="page" id="page-search">
+      <h2 class="page-title">🔍 搜索</h2>
+      <div class="search-toolbar">
+        <div class="search-toolbar-row">
+          <select class="search-filter" id="searchTypeSelect" onchange="App.onSearchTypeChange()" aria-label="搜索类型">
+            <option value="song">歌曲</option>
+            <option value="singer">歌手</option>
+            <option value="playlist">歌单</option>
+          </select>
+          <select class="search-filter" id="sourceSelect" onchange="App.onSourceChange()" aria-label="音源">
+            <option value="">全部音源</option>
+            <option value="kg">🐶 KG</option>
+            <option value="kw">🎵 KW</option>
+            <option value="tx">🐧 TX</option>
+            <option value="wy">☁️ WY</option>
+            <option value="mg">📻 MG</option>
+          </select>
+          <div class="search-box">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input type="text" placeholder="输入歌名、歌手..." id="searchInput" oninput="App.onSearchInput()" onkeydown="if(event.key==='Enter'){App.dismissSuggest();clearTimeout(App.searchTimer);App.doSearch();}" onfocus="App.onSearchInput()" onblur="setTimeout(function(){App.dismissSuggest()},200)">
+            <button class="search-clear" id="searchClearBtn" onclick="App.clearSearch()" style="display:none;" title="清除">✕</button>
+            <button class="search-submit" id="searchSubmitBtn" onclick="App.doSearch()" title="搜索">搜索</button>
+            <!-- 联想词下拉 -->
+            <div class="suggest-dropdown" id="suggestDropdown" style="display:none;"></div>
+          </div>
+        </div>
+      </div>
+      <div id="searchLanding">
+        <!-- 搜索历史 -->
+        <div class="search-history" id="searchHistory" style="display:none;margin-bottom:16px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+            <div style="font-size:13px;font-weight:600;color:var(--text-secondary);">🕒 搜索历史</div>
+            <button class="btn btn-secondary btn-sm" onclick="App.clearSearchHistory()" style="padding:4px 10px;font-size:11px;">清空</button>
+          </div>
+          <div class="search-history-list" id="searchHistoryList" style="display:flex;flex-wrap:wrap;gap:6px;"></div>
+        </div>
+        <!-- 热搜榜 -->
+        <div class="hot-search" id="hotSearch" style="display:none;">
+          <div class="hot-search-title">🔥 热搜榜</div>
+          <div class="hot-search-list" id="hotSearchList"></div>
+        </div>
+      </div>
+      <div id="searchOutcome" style="display:none;">
+        <div class="search-notice" id="searchNotice" style="display:none;"></div>
+        <div class="song-list" id="searchResults"></div>
+        <div id="searchPagination"></div>
+      </div>
+    </div>
+
+    <!-- 收藏页 -->
+    <div class="page" id="page-favorites">
+      <h2 class="page-title">⭐ 收藏</h2>
+      <p class="page-subtitle">来自 lxserver 的收藏歌曲</p>
+      <div id="favoritesList"><p style="color:var(--text-tertiary);">加载中...</p></div>
+    </div>
+
+    <!-- 历史页 -->
+    <div class="page" id="page-history">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+        <h2 class="page-title" style="margin-bottom:0;">📜 播放历史</h2>
+        <button class="btn btn-danger btn-sm" onclick="App.clearHistory()">清空历史</button>
+      </div>
+      <p class="page-subtitle" style="margin-top:0;">最近播放记录</p>
+      <div id="historyList"><p style="color:var(--text-tertiary);">加载中...</p></div>
+    </div>
+
+    <!-- 设置页 -->
+    <div class="page" id="page-settings">
+      <h2 class="page-title">⚙ 设置</h2>
+      <p class="page-subtitle">配置 lxserver 连接和搜索策略</p>
+
+      <div class="settings-section">
+        <h3>🔗 LXServer 连接 <span style="font-size:11px;color:var(--text-tertiary);font-weight:400;">（<span style="color:var(--danger);">*</span> 必填）</span></h3>
+        <div class="form-group required">
+          <label><span class="req-star">*</span> 服务器地址</label>
+          <input type="text" class="input-required" id="cfgHost" placeholder="http://你的NAS地址:9527">
+        </div>
+        <div class="form-group required">
+          <label><span class="req-star">*</span> 用户名</label>
+          <input type="text" class="input-required" id="cfgUser" placeholder="lxserver用户名">
+        </div>
+        <div class="form-group required">
+          <label><span class="req-star">*</span> 密码</label>
+          <div style="position:relative;display:inline-block;max-width:400px;width:100%;">
+            <input type="password" class="input-required" id="cfgPass" placeholder="lxserver密码" style="padding-right:36px;width:100%;">
+            <button onclick="App.togglePassword()" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--text-tertiary);cursor:pointer;font-size:16px;padding:4px;line-height:1;">👁</button>
+          </div>
+        </div>
+        <div class="form-group optional">
+          <label>Web播放器地址 <span class="optional-tag">非必填</span></label>
+          <input type="text" id="cfgWebPlayer" placeholder="lxserver Web播放器URL" style="border-style:dashed;">
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;margin-top:8px;">
+          <button class="btn btn-primary" onclick="App.testConnection()">测试连接</button>
+          <span class="status-badge status-idle" id="connStatus">等待测试</span>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <h3>🔍 搜索设置</h3>
+        <div class="form-group">
+          <label>默认音质</label>
+          <select id="cfgQuality" style="max-width:200px;">
+            <option value="128k">128k</option>
+            <option value="320k" selected>320k</option>
+            <option value="flac">flac</option>
+          </select>
+        </div>
+        <label class="toggle"><input type="checkbox" id="cfgQualityDowngrade" checked><span class="toggle-switch"></span> 允许音质自动降级</label>
+        <label class="toggle"><input type="checkbox" id="cfgCustomSources" checked><span class="toggle-switch"></span> 启用自定义源fallback</label>
+        <label class="toggle"><input type="checkbox" id="cfgFuzzyMatch" checked><span class="toggle-switch"></span> 启用模糊匹配兜底</label>
+        <div class="form-group" style="margin-top:12px;">
+          <label>🔊 音源优先级 <span style="font-size:12px;color:var(--text-tertiary);font-weight:400;">拖拽或点击箭头调整顺序</span></label>
+          <div id="sourcePriorityList" class="source-priority-list"></div>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <h3>🎯 自定义源管理 <span style="font-size:11px;color:var(--text-tertiary);font-weight:400;">v2.1.0</span></h3>
+        <p style="font-size:12px;color:var(--text-secondary);margin-bottom:12px;">管理lxserver中的自定义源，查看运行状态，控制启用/禁用。</p>
+        <div id="customSourceStats" style="margin-bottom:12px;"></div>
+        <div id="customSourceList" class="source-priority-list"></div>
+        <div style="display:flex;gap:8px;margin-top:12px;">
+          <button class="btn btn-primary" onclick="App.refreshCustomSources()">🔄 刷新源列表</button>
+          <button class="btn btn-secondary" onclick="App.resetCustomSourceStats()">📊 重置统计数据</button>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <h3>🔌 MIoT 集成</h3>
+        <div class="info-card"><h4>MIoT 状态</h4><p id="miotStatusText">检测中...</p></div>
+        <button class="btn btn-primary" onclick="App.configureMIoT()">🔄 一键配置MIoT搜索源</button>
+      </div>
+
+      <button class="btn btn-primary" style="margin-top:16px;" onclick="App.saveSettings()">💾 保存设置</button>
+    </div>
+
+    <!-- 歌单页 -->
+    <div class="page" id="page-songlists">
+      <h2 class="page-title">📋 歌单</h2>
+      <div id="songlistPlatform" style="display:flex;gap:6px;margin-bottom:8px;"></div>
+      <div id="songlistTags" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;"></div>
+      <div id="songlistSubTags" style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:12px;"></div>
+      <div id="songlistContent"></div>
+    </div>
+
+    <!-- 排行榜页 -->
+    <div class="page" id="page-leaderboard">
+      <h2 class="page-title">🏆 排行榜</h2>
+      <div id="boardPlatform" style="display:flex;gap:6px;margin-bottom:12px;"></div>
+      <div id="leaderboardContent"></div>
+    </div>
+
+    <!-- 歌手页 -->
+    <div class="page" id="page-artist">
+      <div id="artistContent"></div>
+    </div>
+
+    <!-- 关于页 -->
+    <div class="page" id="page-about">
+      <h2 class="page-title">ℹ️ 关于</h2>
+      <div class="about-card">
+        <div class="about-icon">🎵</div>
+        <h3>{{PLUGIN_NAME}}</h3>
+        <div class="ver">v{{VERSION}}</div>
+        <p>LXServer与MIoT智能音箱的桥接插件。<br>连接lxserver与MIoT插件，实现智能音箱语音点歌。</p>
+        <dl class="about-meta">
+          <dt>插件ID</dt><dd>lxbridge</dd>
+          <dt>作者</dt><dd>soundforge</dd>
+          <dt>许可</dt><dd>Apache-2.0</dd>
+          <dt>GitHub</dt><dd><a href="https://github.com/youxikexue/lxbridge" target="_blank" style="color:var(--accent);">youxikexue/lxbridge</a></dd>
+        </dl>
+        <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border);">
+          <p style="font-size:12px;color:var(--text-secondary);line-height:1.6;">🙏 感谢 <a href="https://github.com/XCQ0607/lxserver" target="_blank" style="color:var(--accent);">lxserver</a>、<a href="https://github.com/songloft-org/songloft-plugin-miot" target="_blank" style="color:var(--accent);">MIoT插件</a>、<a href="https://songloft.hanxi.cc/" target="_blank" style="color:var(--accent);">Songloft</a> 提供支持</p>
+        </div>
+        <div class="disclaimer" style="margin-top:16px;text-align:left;font-size:11px;color:var(--text-tertiary);line-height:1.7;border-top:1px solid var(--border);padding-top:16px;">
+          <h4 style="font-size:12px;color:var(--warning);margin-bottom:8px;">⚠ 免责声明</h4>
+          <p>本插件仅供个人学习研究使用，严禁商业用途。所有音乐资源来自用户自行部署的 lxserver，版权归原权利人所有。使用者需遵守相关法律法规，因使用本插件产生的任何版权纠纷或法律风险，由使用者自行承担。</p>
+        </div>
+        <div class="changelog" style="margin-top:20px;">
+          <h4>📝 更新日志</h4>
+          <div class="changelog-item"><span class="cl-ver">v2.5.2</span> 2026-07-30<br>• 统一歌手详情与歌曲分页体验</div>
+          <div class="changelog-item"><span class="cl-ver">v2.5.1</span> 2026-07-30<br>• 修复详情歌曲封面显示</div>
+          <div class="changelog-item"><span class="cl-ver">v2.5.0</span> 2026-07-29<br>• 新增歌手和歌单搜索<br>• 优化搜索类型与分页体验</div>
+          <div class="changelog-item"><span class="cl-ver">v2.4.3</span> 2026-07-28<br>• 修复旧配置覆盖问题<br>• 优化自定义源列表兼容性</div>
+          <div class="changelog-item"><span class="cl-ver">v2.4.2</span> 2026-07-27<br>• 优化升级后的设置兼容性</div>
+          <div class="changelog-item"><span class="cl-ver">v2.4.1</span> 2026-07-27<br>• 优化升级兼容与连接稳定性</div>
+          <div class="changelog-item"><span class="cl-ver">v2.3.1</span> 2026-07-12<br>• 优化音箱语音播放体验与控制栏状态同步<br>• 优化搜索页搜索与联想词体验</div>
+          <div class="changelog-item"><span class="cl-ver">v2.0.0</span> 2026-07-04<br>🎵 语音点歌质量优化：解决部分歌曲只播放20秒试听片段、部分歌曲是串烧的问题<br>▎主要改进<br>• 自动跳过片段/串烧：识别后记入黑名单，下次点同一首自动换其他音源<br>• 智能选歌：综合歌名、歌手、时长、收藏等多维度排序，结果更准<br>• 搜索更快：多音源并行，1秒内选出最优结果<br>▎说明<br>• 首次遇到片段/串烧会播放一次后才记住，后续自动跳过<br>• 黑名单30天有效，二次点到的歌会自动续期，常听的歌体验持续</div>
+          <div class="changelog-item"><span class="cl-ver">v1.0.0</span> 2026-06-21<br>🎉 首次发布：lxserver集成、智能降级策略、Web管理界面</div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- ===== 吸底播放栏 ===== -->
+<footer class="player-bar">
+  <div class="player-song">
+    <div class="player-cover" id="playerCover">🎵</div>
+    <div class="player-info">
+      <div class="p-title" id="playerTitle">未在播放</div>
+      <div class="p-artist" id="playerArtist">选择歌曲开始</div>
+    </div>
+  </div>
+  <div class="player-controls">
+    <div class="pc-buttons">
+      <button class="pc-btn" id="btnMode" data-tip="播放模式" onclick="App.cyclePlayMode()">🔁</button>
+      <button class="pc-btn pc-prev-btn" data-tip="上一曲" onclick="App.controlPlayback('prev')">⏮</button>
+      <button class="pc-btn play-btn" id="playBtn" data-tip="播放/暂停 (空格)" onclick="App.togglePlay()">▶</button>
+      <button class="pc-btn" data-tip="下一曲" onclick="App.controlPlayback('next')">⏭</button>
+      <button class="pc-btn" data-tip="停止" onclick="App.controlPlayback('stop')">⏹</button>
+      <button class="pc-btn pc-volume-btn" id="mobileVolumeBtn" data-tip="音量" onclick="App.toggleMobileVolume()">🔊</button>
+    </div>
+    <div class="pc-progress">
+      <span id="currentTime">0:00</span>
+      <div class="progress-bar" onmousedown="App.startSeekDrag(event)" onclick="App.seekTo(event)"><div class="progress-fill" id="progressFill" style="width:0%"></div></div>
+      <span id="totalTime">0:00</span>
+    </div>
+  </div>
+  <div class="player-extras">
+    <span id="volumeIcon" style="font-size:14px;cursor:pointer;" data-tip="静音/取消静音 (M)" onclick="App.toggleMute()">🔊</span>
+    <div class="volume-slider" data-tip="音量控制 (↑↓)" onmousedown="App.startVolumeDrag(event)" onclick="App.adjustVolume(event)"><div class="volume-fill" id="volumeFill" style="width:50%"></div></div>
+  </div>
+</footer>
+
+<!-- ===== 移动端垂直音量条 (v1.8.4) ===== -->
+<div id="mobileVolumePop" style="display:none">
+  <span id="mobileVolumeLabel" style="font-size:12px;font-weight:600;color:var(--text-secondary)">50%</span>
+  <div class="vol-slider-v" id="volSliderV" onmousedown="App.startMobileVolumeDrag(event)" onclick="App.adjustMobileVolume(event)">
+    <div class="vol-fill-v" id="volFillV" style="height:50%"></div>
+  </div>
+  <span id="mobileVolumeIcon" style="font-size:16px;cursor:pointer" onclick="event.stopPropagation();App.toggleMute()">🔊</span>
+</div>
+
+<!-- ===== 移动端底部导航 ===== -->
+<nav class="mobile-nav">
+  <button class="mobile-nav-item active" data-page="home" onclick="App.switchPage('home', this)">🏠<span>首页</span></button>
+  <button class="mobile-nav-item" data-page="search" onclick="App.switchPage('search', this)">🔍<span>搜索</span></button>
+  <button class="mobile-nav-item" data-page="favorites" onclick="App.switchPage('favorites', this)">⭐<span>收藏</span></button>
+  <button class="mobile-nav-item" data-page="history" onclick="App.switchPage('history', this)">📜<span>历史</span></button>
+  <button class="mobile-nav-item" data-page="settings" onclick="App.switchPage('settings', this)">⚙<span>设置</span></button>
+</nav>
+
+<div id="toast"></div>
+
+<!-- ===== 日志面板 (v1.0.89) ===== -->
+<div id="logPanel" class="log-panel">
+  <div class="log-resize-handle" id="logResizeHandle"></div>
+  <div class="log-panel-inner">
+    <div class="log-panel-header">
+      <span>📋 日志面板</span>
+      <button class="log-close-btn" onclick="App.toggleLogPanel()">✕</button>
+    </div>
+    <div class="log-panel-toolbar">
+      <select id="logDeviceFilter" onchange="App.renderLogs()">
+        <option value="all">全部设备</option>
+
+
+      </select>
+      <select id="logTypeFilter" onchange="App.renderLogs()">
+        <option value="all">全部操作</option>
+        <option value="play">▶ 播放</option>
+        <option value="volume">🔊 音量</option>
+        <option value="voice">🎤 语音</option>
+        <option value="search">🔍 搜索</option>
+        <option value="error">❌ 错误</option>
+      </select>
+      <span class="log-tb-label">从</span>
+      <span class="log-time-btn" id="logStartTimeBtn" onclick="App.showTimePicker(event)">--:--:--</span>
+      <span class="log-tb-label">开始</span>
+      <span class="log-tb-spacer"></span>
+      <button class="log-tb-btn" onclick="App.clearLogs()">清屏</button>
+      <button class="log-tb-btn" onclick="App.copyLogs()">复制</button>
+    </div>
+    <div class="log-panel-body" id="logPanelBody">
+      <div class="log-empty">暂无日志记录</div>
+    </div>
+    <div class="log-panel-footer">
+      <span id="logCount">共 0 条</span>
+    </div>
+  </div>
+</div>
+
+<!-- 时间选择器浮层 (v1.0.89: 定位在按钮附近) -->
+<div id="timePickerOverlay" class="log-tp-overlay" style="display:none;" onclick="App.hideTimePicker()">
+  <div class="log-tp-box" onclick="event.stopPropagation()" id="logTpBox">
+    <div class="log-tp-title">选择起始时间</div>
+    <div class="log-tp-row">
+      <input type="number" id="logTpH" min="0" max="23" value="0" onchange="App.updateTimePreview()"><label>时</label>
+      <input type="number" id="logTpM" min="0" max="59" value="0" onchange="App.updateTimePreview()"><label>分</label>
+      <input type="number" id="logTpS" min="0" max="59" value="0" onchange="App.updateTimePreview()"><label>秒</label>
+    </div>
+    <div style="text-align:center;margin:4px 0;font-size:11px;color:var(--text-tertiary);" id="logTpPreview"></div>
+    <div class="log-tp-actions">
+      <button class="log-tb-btn" onclick="App.resetTimeFilter()">重置</button>
+      <button class="log-tb-btn" onclick="App.hideTimePicker()">取消</button>
+      <button class="log-tb-btn" style="background:var(--accent);color:#fff;" onclick="App.applyTimeFilter()">确定</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 时间线视图 (v1.0.94) ===== -->
+<div id="timelinePanel" class="timeline-panel">
+  <div class="timeline-inner">
+    <div class="timeline-header" id="timelineHeader">
+      <span>🕐 时间线视图</span>
+      <button onclick="App.toggleTimeline()" style="background:none;border:none;color:var(--text-secondary);cursor:pointer;font-size:16px;padding:0 4px;">✕</button>
+    </div>
+    <div class="timeline-toolbar">
+      <button class="tl-btn" onclick="App.refreshTimeline()">🔄 刷新</button>
+      <select id="timelineLimit" onchange="App.refreshTimeline()">
+        <option value="30">最近30条</option>
+        <option value="50" selected>最近50条</option>
+        <option value="100">最近100条</option>
+      </select>
+      <select id="timelineFilter" onchange="App.refreshTimeline()">
+        <option value="all">全部事件</option>
+        <option value="xiaoai">小爱对话</option>
+        <option value="plugin">插件响应</option>
+      </select>
+      <span class="timeline-count" id="timelineCount">共 0 条</span>
+    </div>
+    <div class="timeline-body" id="timelineBody">
+      <div class="timeline-empty">加载中...</div>
+    </div>
+    <div class="timeline-resize-handle timeline-resize-right"></div>
+    <div class="timeline-resize-handle timeline-resize-bottom"></div>
+    <div class="timeline-resize-handle timeline-resize-corner"></div>
+  </div>
+</div>
+
+<script src="js/api.js"></script>
+<script src="js/entity-search.js"></script>
+<script src="js/app.js"></script>
+
+</body>
+</html>

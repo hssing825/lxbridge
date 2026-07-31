@@ -1,0 +1,33 @@
+{
+  "name": "songloft-plugin-lxbridge",
+  "version": "1.0.0",
+  "description": "连接lxserver与MIoT插件，实现小爱音响零成本语音点歌",
+  "main": "dist/main.js",
+  "scripts": {
+    "test": "node --test tests/*.test.mjs tests/*.test.ts",
+    "dev": "songloft-plugin dev",
+    "build": "songloft-plugin build",
+    "validate": "songloft-plugin validate",
+    "browser:init": "node scripts/songloft-browser.mjs init",
+    "browser:self-test": "node scripts/songloft-browser.mjs self-test",
+    "deploy:verify": "node scripts/songloft-browser.mjs upload-verify"
+  },
+  "dependencies": {
+    "@songloft/plugin-sdk": "^2.6.0"
+  },
+  "devDependencies": {
+    "@songloft/plugin-builder": "^2.6.0",
+    "playwright-core": "^1.61.1",
+    "typescript": "^6.0.3"
+  },
+  "keywords": [
+    "songloft",
+    "plugin",
+    "lxserver",
+    "miot",
+    "xiaomi",
+    "music"
+  ],
+  "author": "soundforge",
+  "license": "Apache-2.0"
+}

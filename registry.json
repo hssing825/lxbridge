@@ -1,0 +1,6 @@
+{
+  "name": "LX音乐桥插件源",
+  "plugins": [
+    "https://raw.githubusercontent.com/youxikexue/lxbridge/master/plugin.json"
+  ]
+}
