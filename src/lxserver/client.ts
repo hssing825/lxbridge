@@ -17,6 +17,7 @@ import type {
   QualityBlacklistEntry,
   QualityBlacklistReason,
   FallbackSearchResult,
+  FailureClassification,
 } from './types';
 
 // 收藏缓存条目（内部使用）
@@ -30,9 +31,12 @@ interface UrlResolutionResult {
   customSourceName?: string;
   failureText?: string;
   blocked?: boolean;
+  failureClassification?: FailureClassification;
 }
 import { ConfigManager } from '../config/manager';
 import { extractCustomSources } from './custom-sources';
+import { FailureClassifier } from './failure-classification';
+import { selectRunnableFallbackBatch } from './fallback-batch';
 import {
   buildEntitySearchPath,
   mergeEntitySourcePages,
@@ -932,9 +936,14 @@ export class LXServerClient {
     songloft.log.info('[LXClient] getSongUrl response: HTTP=' + resp.status + ' body=' + text.substring(0, 500));
 
     if (!resp.ok) {
-      const blocked = /block\s*ip/i.test(text);
-      songloft.log.warn('[LXClient] getSongUrl failed: HTTP ' + resp.status + ' blocked=' + blocked);
-      return { url: null, failureText: text.substring(0, 300), blocked };
+      const classification = FailureClassifier.classify(text.substring(0, 300), resp.status);
+      songloft.log.warn('[LXClient] getSongUrl failed: HTTP ' + resp.status + ' category=' + classification.category + ' confidence=' + classification.confidence);
+      return {
+        url: null,
+        failureText: text.substring(0, 300),
+        blocked: classification.category === 'platform_block',
+        failureClassification: classification,
+      };
     }
 
     try {
@@ -948,7 +957,12 @@ export class LXServerClient {
         // v1.8.22: 异常URL检测 — 报错音频URL视为无效
         if (this.isAbnormalUrl(data.url)) {
           songloft.log.warn('[LXClient] ✗ Abnormal URL detected: ' + data.url.substring(0, 100));
-        return { url: null, customSourceName, failureText: 'abnormal url' };
+          return {
+            url: null,
+            customSourceName,
+            failureText: 'abnormal url',
+            failureClassification: FailureClassifier.classify('', 0, 'invalid_url'),
+          };
         }
         songloft.log.info('[LXClient] ✓ Got URL: ' + data.url.substring(0, 100) + '...');
         return { url: data.url, customSourceName };
@@ -959,17 +973,34 @@ export class LXServerClient {
         // v1.8.22: 异常URL检测
         if (this.isAbnormalUrl(data.data.url)) {
           songloft.log.warn('[LXClient] ✗ Abnormal URL detected (data.data): ' + data.data.url.substring(0, 100));
-          return { url: null, customSourceName, failureText: 'abnormal url' };
+          return {
+            url: null,
+            customSourceName,
+            failureText: 'abnormal url',
+            failureClassification: FailureClassifier.classify('', 0, 'invalid_url'),
+          };
         }
         songloft.log.info('[LXClient] ✓ Got URL from data.url: ' + data.data.url.substring(0, 100) + '...');
         return { url: data.data.url, customSourceName };
       }
 
       songloft.log.warn('[LXClient] ✗ No url in response, full response: ' + text.substring(0, 300));
-      return { url: null, customSourceName, failureText: text.substring(0, 300), blocked: /block\s*ip/i.test(text) };
+      const classification = FailureClassifier.classify(text.substring(0, 300), resp.status);
+      return {
+        url: null,
+        customSourceName,
+        failureText: text.substring(0, 300),
+        blocked: classification.category === 'platform_block',
+        failureClassification: classification,
+      };
     } catch (e) {
       songloft.log.warn('[LXClient] Parse error: ' + String(e));
-      return { url: null, failureText: String(e) };
+      return {
+        url: null,
+        customSourceName: '',
+        failureText: String(e),
+        failureClassification: FailureClassifier.classify(String(e)),
+      };
     }
   }
 
@@ -1428,12 +1459,12 @@ export class LXServerClient {
     const startedAt = Date.now();
     let attempts = 0;
 
-    const finish = (song: LXSearchResult | null, url: string | null, source: string, quality: string, failureReason?: string): FallbackSearchResult => {
+    const finish = (song: LXSearchResult | null, url: string | null, source: string, quality: string, failureReason?: string, failureClassification?: FailureClassification): FallbackSearchResult => {
       const elapsedMs = Date.now() - startedAt;
       const summary = '[FallbackV22][' + requestId + '] done success=' + !!url + ' attempts=' + attempts + ' elapsedMs=' + elapsedMs + (failureReason ? ' reason=' + failureReason : '');
       songloft.log.info(summary);
       fallbackSteps.push('V22总结: ' + (url ? '成功' : '失败') + '；URL解析' + attempts + '/' + LXServerClient.FALLBACK_MAX_URL_ATTEMPTS + '次；耗时' + elapsedMs + 'ms' + (failureReason ? '；原因=' + failureReason : ''));
-      return { song, url, source, quality, fallbackSteps, requestId, attempts, elapsedMs, failureReason };
+      return { song, url, source, quality, fallbackSteps, requestId, attempts, elapsedMs, failureReason, failureClassification };
     };
 
     fallbackSteps.push('V22请求: ' + requestId + '；预算10秒/8次；每批最多2个并行');
@@ -1523,32 +1554,24 @@ export class LXServerClient {
     const usedCandidates = new Set<string>();
     const usedSongVersions = new Set<string>();
     const blockedPlatforms = new Set<string>();
-    const getCandidateKey = function(candidate: LXSearchResult, quality: string) {
-      return candidate.source + ':' + candidate.id + ':' + quality;
-    };
     const canContinue = () => attempts < LXServerClient.FALLBACK_MAX_URL_ATTEMPTS && Date.now() - startedAt < LXServerClient.FALLBACK_TIMEOUT_MS;
     const tryBatch = async (batchName: string, batch: Array<{ song: LXSearchResult; quality: string }>): Promise<FallbackSearchResult | null> => {
       if (!canContinue()) return null;
-      const globalCooldown = await this.configManager.getPlatformCooldownRemaining('__global__');
-      if (globalCooldown > 0) {
-        fallbackSteps.push('全局冷却中，剩余' + Math.ceil(globalCooldown / 1000) + '秒');
-        return finish(null, null, '', '', '全局block ip冷却');
+      const selected = await selectRunnableFallbackBatch({
+        batch,
+        maxConcurrent: LXServerClient.FALLBACK_MAX_CONCURRENT_URLS,
+        usedCandidates,
+        blockedPlatforms,
+        getCooldownRemaining: source => this.configManager.getPlatformCooldownRemaining(source),
+      });
+      for (let index = 0; index < selected.skippedCooldowns.length; index++) {
+        const skipped = selected.skippedCooldowns[index];
+        fallbackSteps.push('跳过冷却平台: ' + skipped.source + '（剩余' + Math.ceil(skipped.remainingMs / 1000) + '秒）');
       }
-
-      const runnable: Array<{ song: LXSearchResult; quality: string }> = [];
-      for (let index = 0; index < batch.length && runnable.length < LXServerClient.FALLBACK_MAX_CONCURRENT_URLS; index++) {
-        const item = batch[index];
-        const key = getCandidateKey(item.song, item.quality);
-        if (usedCandidates.has(key) || blockedPlatforms.has(item.song.source)) continue;
-        const cooldown = await this.configManager.getPlatformCooldownRemaining(item.song.source);
-        if (cooldown > 0) {
-          fallbackSteps.push('跳过冷却平台: ' + item.song.source + '（剩余' + Math.ceil(cooldown / 1000) + '秒）');
-          blockedPlatforms.add(item.song.source);
-          continue;
-        }
-        usedCandidates.add(key);
+      const runnable = selected.runnable;
+      for (let index = 0; index < runnable.length; index++) {
+        const item = runnable[index];
         usedSongVersions.add(item.song.source + ':' + item.song.id);
-        runnable.push(item);
       }
       if (runnable.length === 0) return null;
 
@@ -1590,12 +1613,22 @@ export class LXServerClient {
         }
         unresolved.delete(outcome.index);
         if (outcome.result.blocked) {
-          const cooldown = await this.configManager.recordPlatformBlock(outcome.item.song.source);
+          await this.configManager.recordPlatformBlock(outcome.item.song.source);
           blockedPlatforms.add(outcome.item.song.source);
-          fallbackSteps.push('block ip: ' + outcome.item.song.source + (cooldown.global ? '；升级为全局冷却' : '；平台冷却15分钟'));
+          fallbackSteps.push('block ip: ' + outcome.item.song.source + '；平台冷却15分钟');
         }
         if (outcome.result.customSourceName) {
           await this.configManager.recordCustomSourceResult(outcome.result.customSourceName, outcome.item.song.source, !!outcome.result.url);
+        }
+        const classification = outcome.result.failureClassification;
+        if (classification) {
+          fallbackSteps.push('失败分类: ' + classification.category);
+          if (classification.action === 'skip') {
+            fallbackSteps.push('无效音频地址，跳过当前候选');
+          } else if (classification.action === 'stop') {
+            fallbackSteps.push('认证或配置错误，停止后续URL解析');
+            return finish(null, null, '', '', classification.failureReason, classification);
+          }
         }
         if (outcome.result.url && !this.isAbnormalUrl(outcome.result.url)) {
           fallbackSteps.push('✓ 成功: ' + outcome.item.song.source + '/' + outcome.item.quality);

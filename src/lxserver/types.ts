@@ -238,6 +238,18 @@ export interface FallbackRecord {
   timestamp: string;       // ISO8601
 }
 
+export type FailureHint = 'invalid_url';
+
+export interface FailureClassification {
+  category: 'auth_config' | 'network' | 'no_result' | 'invalid_url' | 'platform_block' | 'timeout' | 'unknown';
+  confidence: number;
+  action: 'stop' | 'skip' | 'cooldown' | 'record';
+  failureReason: string;
+  isHighConfidence: boolean;
+  shouldStop: boolean;
+  httpStatus?: number;
+}
+
 export interface FallbackSearchResult {
   song: LXSearchResult | null;
   url: string | null;
@@ -248,8 +260,8 @@ export interface FallbackSearchResult {
   attempts: number;
   elapsedMs: number;
   failureReason?: string;
+  failureClassification?: FailureClassification;
 }
-
 // ===== 自定义源管理 (v2.1.0) =====
 
 export interface CustomSource {

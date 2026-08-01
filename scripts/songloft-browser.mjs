@@ -231,7 +231,26 @@ async function verifyRuntime(frame, manifest) {
   await results.first().waitFor({ state: 'visible', timeout: 30_000 })
   const resultCount = await results.count()
   requireCondition(resultCount > 0, 'Read-only search returned no rendered song results.')
-  return { miotStatus, searchResultCount: resultCount }
+
+  // v2.6.0: 诊断中心功能验收
+  await frame.locator('.nav-item[data-page="diagnostics"]').click()
+  await frame.locator('#page-diagnostics').waitFor({ state: 'visible', timeout: 15_000 })
+  await frame.locator('#diagnosticsContent .status-banner').waitFor({ state: 'visible', timeout: 15_000 })
+  const bannerText = (await frame.locator('#diagnosticsContent .status-banner').innerText()).trim()
+  requireCondition(/系统正常|系统可用|需关注|系统存在异常/.test(bannerText),
+    `Diagnostics banner did not render system status: ${bannerText}`)
+  const sectionCount = await frame.locator('#diagnosticsContent .diag-card').count()
+  requireCondition(sectionCount === 4, `Diagnostics rendered unexpected summary count: ${sectionCount}`)
+  const disclosureCount = await frame.locator('#diagnosticsContent .diag-disclosure').count()
+  requireCondition(disclosureCount === 2, `Diagnostics rendered unexpected disclosure count: ${disclosureCount}`)
+  const report = await frame.locator('body').evaluate(() =>
+    window.API.getDiagnosticsReport().then(r =>
+      r && r.success && r.data && r.data.report ? r.data.report : null))
+  requireCondition(typeof report === 'string' && report.length > 0 && /系统诊断报告/.test(report),
+    'Diagnostics report endpoint did not return a report.')
+  requireCondition(!/https?:\/\//.test(report), 'Diagnostics report leaked a URL.')
+
+  return { miotStatus, searchResultCount: resultCount, diagnosticsSections: sectionCount }
 }
 
 async function initializeBrowser() {
@@ -259,7 +278,7 @@ async function uploadAndVerify() {
     console.log('[2/3] 管理页面版本与启用状态已确认')
     const frame = await openPluginFrame(page, manifest)
     const runtime = await verifyRuntime(frame, manifest)
-    console.log('[3/3] 运行页面、MIoT 状态和只读搜索已确认')
+    console.log('[3/3] 运行页面、MIoT 状态、只读搜索与诊断中心已确认')
 
     const criticalIssues = [...new Set(issues)]
     requireCondition(criticalIssues.length === 0,
@@ -271,6 +290,7 @@ async function uploadAndVerify() {
       version: manifest.version,
       miotStatus: runtime.miotStatus,
       searchResultCount: runtime.searchResultCount,
+      diagnosticsSections: runtime.diagnosticsSections,
       verifiedAt: new Date().toISOString(),
     }, null, 2))
   } finally {

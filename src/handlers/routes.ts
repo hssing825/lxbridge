@@ -8,6 +8,9 @@ import { MIoTBridge } from '../bridge/miot';
 import { SearchAdapter } from '../bridge/search';
 import type { MIoTSearchRequest } from '../bridge/search';
 import { PlayerController } from '../player/controller';
+import { PLUGIN_VERSION } from '../version';
+import { DiagnosticsService } from '../diagnostics/diagnostics-center';
+import { simulateFallbackV22 } from '../lxserver/fallback-simulation';
 
 // ===== 语音交互日志 (v1.0.86) =====
 const voiceLogs: Array<{ time: number; type: string; action: string; detail: string; result: string | null; extra?: any }> = [];
@@ -81,47 +84,6 @@ function getBody(req: HTTPRequest): any {
   } catch {
     return {};
   }
-}
-
-function simulateFallbackV22(scenario: string): {
-  success: boolean;
-  attempts: number;
-  elapsedMs: number;
-  failureReason?: string;
-  fallbackSteps: string[];
-} {
-  const batches = [
-    ['kg/320k', 'tx/320k'],
-    ['wy/320k', 'mg/320k'],
-    ['kw/320k', '另一正式版/320k'],
-    ['高匹配候选/128k', 'custom新候选/128k'],
-  ];
-  const steps = ['模拟V22：预算10秒/8次；每批最多2个并行'];
-  let attempts = 0;
-
-  for (let index = 0; index < batches.length; index++) {
-    const batch = batches[index];
-    attempts += batch.length;
-    steps.push('第' + (index + 1) + '批：并行解析 ' + batch.join(' + '));
-
-    if (scenario === 'success_batch_3' && index === 2) {
-      steps.push('✓ 模拟成功：kw/320k');
-      return { success: true, attempts, elapsedMs: 0, fallbackSteps: steps };
-    }
-    if (scenario === 'platform_block' && index === 0) {
-      steps.push('block ip：kg；模拟平台冷却15分钟');
-      steps.push('✓ 模拟成功：tx/320k；其他平台不受影响');
-      return { success: true, attempts, elapsedMs: 0, fallbackSteps: steps };
-    }
-    if (scenario === 'global_block' && index === 0) {
-      steps.push('block ip：kg；模拟平台冷却15分钟');
-      steps.push('block ip：tx；模拟升级为全局冷却15分钟');
-      return { success: false, attempts, elapsedMs: 0, failureReason: '模拟全局block ip冷却', fallbackSteps: steps };
-    }
-    steps.push('✗ 模拟失败：本批无可用URL');
-  }
-
-  return { success: false, attempts, elapsedMs: 0, failureReason: '模拟8次URL解析预算耗尽', fallbackSteps: steps };
 }
 
 // QuickJS 兼容的 query string 解析
@@ -1031,6 +993,39 @@ export function registerHandlers(
       await configManager.resetCustomSourceStats();
       return jsonResponse({ success: true });
     } catch (e: any) {
+      return errorResponse(e.message);
+    }
+  });
+
+  // ── 系统诊断中心 (v2.6.0) ──
+  const diagnosticsService = new DiagnosticsService({
+    version: PLUGIN_VERSION,
+    configManager,
+    lxClient,
+    miotBridge,
+    playerController,
+    getVoiceLogs: () => voiceLogs,
+    getPlaybackTracker: () => playbackTracker,
+  });
+
+  // 诊断总览：默认只访问状态或配置接口，不搜索、不解析、不播放、不控制音箱。
+  router.get('/api/diagnostics/overview', async (_req: HTTPRequest) => {
+    try {
+      const data = await diagnosticsService.gatherOverview();
+      return jsonResponse({ success: true, data });
+    } catch (e: any) {
+      songloft.log.error('[Diagnostics] overview error: ' + String(e));
+      return errorResponse(e.message);
+    }
+  });
+
+  // 脱敏诊断报告：返回可复制的纯文本，不含敏感信息。
+  router.get('/api/diagnostics/report', async (_req: HTTPRequest) => {
+    try {
+      const report = await diagnosticsService.buildReport();
+      return jsonResponse({ success: true, data: { report } });
+    } catch (e: any) {
+      songloft.log.error('[Diagnostics] report error: ' + String(e));
       return errorResponse(e.message);
     }
   });

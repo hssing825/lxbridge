@@ -146,12 +146,27 @@ writeFileSync(pluginPath, JSON.stringify(finalManifest, null, 2));
 console.log('\n3. plugin.json updated with hashes');
 
 // 步骤5.5: 验证 JS 语法（避免 syntax error 上线）
-import { execSync } from 'child_process';
+// 内联 JS 很大，不能通过命令行参数传给 node -e（Windows 命令行长度有限），
+// 改为写入临时文件后用 node --check 校验。
+import { execFileSync } from 'child_process';
+import { mkdtempSync } from 'fs';
+import { tmpdir } from 'os';
 const htmlPath = join(buildDir, 'static', 'index.html');
 const htmlContent = readFileSync(htmlPath, 'utf8');
-try { execSync('node -e "' + htmlContent.match(/<script>([\s\S]*?)<\/script>/g)?.map(s => s.replace(/<script>|<\/script>/g, '')).join(';') + '"', { timeout: 5000, stdio: 'pipe' }); }
-catch (e) { console.error('JS Syntax Check FAILED:', e.stderr?.toString()?.substring(0, 200) || e.message); }
-console.log('   ✓ JS syntax validated');
+const scripts = htmlContent.match(/<script>([\s\S]*?)<\/script>/g)?.map(s => s.replace(/<script>|<\/script>/g, '')).join('\n');
+let syntaxTmpDir = '';
+try {
+  syntaxTmpDir = mkdtempSync(join(tmpdir(), 'lxbridge-syntax-'));
+  const checkPath = join(syntaxTmpDir, 'check.js');
+  writeFileSync(checkPath, scripts ?? '');
+  execFileSync(process.execPath, ['--check', checkPath], { timeout: 5000, stdio: 'pipe' });
+  console.log('   ✓ JS syntax validated');
+} catch (e) {
+  console.error('JS Syntax Check FAILED:', e.stderr?.toString()?.substring(0, 200) || e.message);
+  throw e;
+} finally {
+  if (syntaxTmpDir) rmSync(syntaxTmpDir, { recursive: true, force: true });
+}
 
 // 步骤6: 创建 zip
 console.log('4. Creating zip...');

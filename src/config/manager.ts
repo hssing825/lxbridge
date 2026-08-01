@@ -3,6 +3,11 @@
 
 import type { LXServerConfig, PlayHistoryItem, FallbackRecord, QualityBlacklistEntry } from '../lxserver/types';
 import { DEFAULT_LX_CONFIG } from '../lxserver/types';
+import {
+  normalizePlatformCooldowns,
+  recordSourceCooldown,
+} from './platform-cooldown';
+import type { PlatformCooldowns } from './platform-cooldown';
 
 const STORAGE_KEY_CONFIG = 'lxserver_config';
 const STORAGE_KEY_HISTORY = 'play_history';
@@ -270,9 +275,9 @@ export class ConfigManager {
 
   // ===== URL 解析平台冷却 (v2.2.0) =====
 
-  private _platformCooldownCache: Record<string, { blockedAt: number; expiresAt: number }> | null = null;
+  private _platformCooldownCache: PlatformCooldowns | null = null;
 
-  async getPlatformCooldowns(): Promise<Record<string, { blockedAt: number; expiresAt: number }>> {
+  async getPlatformCooldowns(): Promise<PlatformCooldowns> {
     if (!this._platformCooldownCache) {
       const raw = await songloft.storage.get(STORAGE_KEY_PLATFORM_COOLDOWNS);
       try {
@@ -282,19 +287,12 @@ export class ConfigManager {
       }
     }
 
-    const cooldowns = this._platformCooldownCache!;
-    const now = Date.now();
-    let changed = false;
-    for (const platform of Object.keys(cooldowns)) {
-      if (cooldowns[platform].expiresAt <= now) {
-        delete cooldowns[platform];
-        changed = true;
-      }
+    const normalized = normalizePlatformCooldowns(this._platformCooldownCache!);
+    this._platformCooldownCache = normalized.cooldowns;
+    if (normalized.changed) {
+      await songloft.storage.set(STORAGE_KEY_PLATFORM_COOLDOWNS, JSON.stringify(normalized.cooldowns));
     }
-    if (changed) {
-      await songloft.storage.set(STORAGE_KEY_PLATFORM_COOLDOWNS, JSON.stringify(cooldowns));
-    }
-    return cooldowns;
+    return normalized.cooldowns;
   }
 
   async getPlatformCooldownRemaining(platform: string): Promise<number> {
@@ -306,18 +304,9 @@ export class ConfigManager {
   async recordPlatformBlock(platform: string, cooldownMs: number = 15 * 60 * 1000): Promise<{ global: boolean }> {
     const cooldowns = await this.getPlatformCooldowns();
     const now = Date.now();
-    cooldowns[platform] = { blockedAt: now, expiresAt: now + cooldownMs };
-
-    const recentPlatforms = Object.keys(cooldowns).filter(function(key) {
-      return key !== '__global__' && now - cooldowns[key].blockedAt <= 60 * 1000;
-    });
-    const global = recentPlatforms.length >= 2;
-    if (global) {
-      cooldowns.__global__ = { blockedAt: now, expiresAt: now + cooldownMs };
-    }
-
-    await songloft.storage.set(STORAGE_KEY_PLATFORM_COOLDOWNS, JSON.stringify(cooldowns));
-    songloft.log.warn('[FallbackV22] Cooldown recorded: platform=' + platform + ' global=' + global);
-    return { global };
+    this._platformCooldownCache = recordSourceCooldown(cooldowns, platform, now, cooldownMs);
+    await songloft.storage.set(STORAGE_KEY_PLATFORM_COOLDOWNS, JSON.stringify(this._platformCooldownCache));
+    songloft.log.warn('[FallbackV22] Cooldown recorded: platform=' + platform);
+    return { global: false };
   }
 }

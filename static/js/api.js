@@ -210,4 +210,7 @@ var API = {
   reorderCustomSources: function(ids) { return this.request('POST', '/api/custom-sources/reorder', { ids: ids }); },
   getCustomSourceStats: function() { return this.request('GET', '/api/custom-source-stats'); },
   resetCustomSourceStats: function() { return this.request('POST', '/api/custom-source-stats/reset'); },
+  // 系统诊断中心 (v2.6.0)
+  getDiagnosticsOverview: function() { return this.request('GET', '/api/diagnostics/overview'); },
+  getDiagnosticsReport:  function() { return this.request('GET', '/api/diagnostics/report'); },
 };

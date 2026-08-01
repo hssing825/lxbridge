@@ -5,6 +5,7 @@
 import { readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { fileURLToPath } from 'url';
+import { EOL } from 'os';
 
 const __dirname = join(fileURLToPath(import.meta.url), '..');
 const staticDir = join(__dirname, '..', 'static');
@@ -18,11 +19,15 @@ const PLUGIN_NAME_HTML = PLUGIN_NAME.replace(/[&<>"']/g, function(character) {
   return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character];
 });
 
+const versionSource = ['// 自动生成 — 由 scripts/inline.mjs 从 plugin.json 同步', '', 'export const PLUGIN_VERSION: string = ' + JSON.stringify(VERSION) + ';', ''].join(EOL);
+writeFileSync(join(rootDir, 'src', 'version.ts'), versionSource);
+
 // 从模板读取（模板永远保留外部引用，不会被内联代码污染）
 let html = readFileSync(join(staticDir, 'index.template.html'), 'utf8');
 const css = readFileSync(join(staticDir, 'css', 'style.css'), 'utf8');
 const apiJs = readFileSync(join(staticDir, 'js', 'api.js'), 'utf8');
 const entitySearchJs = readFileSync(join(staticDir, 'js', 'entity-search.js'), 'utf8');
+const playQueueJs = readFileSync(join(staticDir, 'js', 'play-queue.js'), 'utf8');
 const appJs = readFileSync(join(staticDir, 'js', 'app.js'), 'utf8');
 
 // 替换插件信息占位符
@@ -48,6 +53,11 @@ html = html.replace(
 );
 
 html = html.replace(
+  '<script src="js/play-queue.js"></script>',
+  '<script>\n' + playQueueJs + '\n</script>'
+);
+
+html = html.replace(
   '<script src="js/app.js"></script>',
   '<script>\n' + appJs + '\n</script>'
 );
@@ -58,4 +68,5 @@ console.log('Inline done. Name:', PLUGIN_NAME, '| Version:', VERSION, '| HTML si
 console.log('  CSS inlined:', css.length, 'bytes');
 console.log('  api.js inlined:', apiJs.length, 'bytes');
 console.log('  entity-search.js inlined:', entitySearchJs.length, 'bytes');
+console.log('  play-queue.js inlined:', playQueueJs.length, 'bytes');
 console.log('  app.js inlined:', appJs.length, 'bytes');

@@ -147,7 +147,7 @@ var App = {
 
     // URL hash 路由：从 #/pageName 恢复页面
     var hash = window.location.hash.replace('#/', '').replace('#', '') || 'home';
-    var validPages = ['home', 'search', 'favorites', 'history', 'settings', 'about', 'songlists', 'leaderboard', 'artist'];
+    var validPages = ['home', 'search', 'favorites', 'history', 'settings', 'about', 'songlists', 'leaderboard', 'artist', 'diagnostics'];
     if (validPages.indexOf(hash) === -1) hash = 'home';
     this.switchPage(hash, document.querySelector('[data-page="' + hash + '"]'));
 
@@ -263,6 +263,9 @@ var App = {
           break;
         case 'm':  // M键：静音/取消静音
           self.toggleMute();
+          break;
+        case 'Escape':  // Esc：关闭队列面板
+          self.closeQueuePanel();
           break;
       }
     });
@@ -554,7 +557,8 @@ var App = {
       history: '播放历史',
       settings: '设置',
       about: '关于',
-      artist: '歌手'
+      artist: '歌手',
+      diagnostics: '系统诊断'
     };
     document.title = (pageTitles[pageName] || pluginName) + ' - ' + pluginName;
     // 移动端：切换页面时自动关闭侧边栏
@@ -595,10 +599,166 @@ var App = {
       this.setupSettingsAutoSave();
       this.renderSourcePriority();  // v1.8.22: 渲染音源优先级
     }
+    if (pageName === 'diagnostics') {
+      this.loadDiagnostics();
+    }
   },
 
   goToSettings() {
     this.switchPage('settings', document.querySelector('[data-page=settings]'));
+  },
+
+  goToDiagnostics() {
+    this.switchPage('diagnostics', null);
+  },
+
+  // ===== 系统诊断中心 (v2.6.0) =====
+  async loadDiagnostics() {
+    var container = document.getElementById('diagnosticsContent');
+    if (!container) return;
+    container.innerHTML = '<p style="color:var(--text-tertiary);">加载中...</p>';
+    var resp = await API.getDiagnosticsOverview();
+    if (!resp.success || !resp.data) {
+      container.innerHTML = '<div class="status-banner error">诊断数据加载失败: ' + this._escapeHtml(resp.error || '未知错误') + '</div>';
+      return;
+    }
+    this.renderDiagnostics(resp.data);
+  },
+
+  renderDiagnostics(data) {
+    var container = document.getElementById('diagnosticsContent');
+    if (!container) return;
+    var self = this;
+    var state = function(label, level) {
+      return '<span class="diag-state ' + level + '">' + self._escapeHtml(label) + '</span>';
+    };
+    var row = function(label, value) {
+      return '<div class="diag-row"><span class="diag-label">' + self._escapeHtml(label) + '</span><span class="diag-value">' + value + '</span></div>';
+    };
+    var card = function(id, title, rows) {
+      return '<section class="diag-card" data-diag-card="' + id + '"><h3>' + title + '</h3>' + rows.join('') + '</section>';
+    };
+    var overallLevel = data.health.overall === 'ok' ? 'success' : data.health.overall === 'warn' ? 'warn' : 'error';
+    var overallText = data.health.overall === 'ok' ? '系统正常' : data.health.overall === 'warn' ? '部分项目需关注' : '系统存在异常';
+    var lxLevel = data.lxserver.connected === true ? 'ok' : data.lxserver.connected === false ? 'error' : 'warn';
+    var lxText = data.lxserver.connected === true ? '已连接' : data.lxserver.connected === false ? '连接失败' : '未检查';
+    var miotLevel = data.miot.installed && data.miot.configured ? 'ok' : data.miot.installed ? 'warn' : 'error';
+    var miotText = data.miot.installed ? (data.miot.configured ? '正常' : '未配置') : '未安装';
+    var cooldownCount = data.platformCooldowns.active.length;
+    var cooldownText = cooldownCount === 0 ? '无' : cooldownCount + ' 项';
+    var cooldownLevel = cooldownCount === 0 ? 'ok' : 'warn';
+    if (data.health.overall === 'ok' && cooldownCount > 0) {
+      overallLevel = 'warn';
+      overallText = '系统可用，部分来源冷却';
+    }
+    var sourcePriority = data.lxserver.sourcePriority && data.lxserver.sourcePriority.length > 0
+      ? self._escapeHtml(data.lxserver.sourcePriority.join(' → '))
+      : '未配置';
+
+    var html = '<div class="status-banner diag-status-banner ' + overallLevel + '">';
+    html += '<strong>● ' + overallText + '</strong>';
+    html += '<div class="diag-status-points"><span>服务 ' + state(lxText, lxLevel) + '</span>';
+    html += '<span>MIoT ' + state(miotText, miotLevel) + '</span>';
+    html += '<span>来源冷却 ' + state(cooldownText, cooldownLevel) + '</span></div></div>';
+
+    var coreRows = [
+      row('lxserver', state(lxText, lxLevel)),
+      row('登录令牌', state(data.lxserver.tokenValid ? '有效' : '无效', data.lxserver.tokenValid ? 'ok' : 'warn')),
+      row('MIoT', state(miotText, miotLevel)),
+      row('在线设备', data.miot.onlineDeviceCount + ' / ' + data.miot.deviceCount),
+    ];
+    var protectionRows = [
+      row('来源冷却', state(cooldownText, cooldownLevel)),
+      row('音质黑名单', data.cache.blacklistCount + ' 条'),
+      row('降级记录', data.cache.fallbackLogCount + ' 条'),
+      row('最近失败', state(data.errorSummary.total === 0 ? '无' : data.errorSummary.total + ' 条', data.errorSummary.total === 0 ? 'ok' : 'warn')),
+    ];
+    var sourceRows = [
+      row('自定义源', data.customSources.enabled + ' / ' + data.customSources.total),
+      row('默认音质', self._escapeHtml(data.lxserver.defaultQuality || '-')),
+      row('音源顺序', sourcePriority),
+      row('Web播放器', data.lxserver.webPlayerConfigured ? '已配置' : '未配置'),
+    ];
+    var localRows = [
+      row('播放历史', data.cache.historyCount + ' 条'),
+      row('播放追踪', data.recent.playback.total + ' 条'),
+      row('自定义源统计', data.cache.customSourceStatCount + ' 条'),
+      row('语音失败', data.recent.voice.failures + ' 次'),
+    ];
+    html += '<div class="diag-summary-grid">';
+    html += card('core', '核心服务', coreRows);
+    html += card('protection', '播放保护', protectionRows);
+    html += card('sources', '音源与配置', sourceRows);
+    html += card('local', '本地数据', localRows);
+    html += '</div>';
+
+    var issueCount = data.health.checks.filter(function(check) { return check.level !== 'ok'; }).length;
+    html += '<details class="diag-disclosure"><summary>异常与最近活动 <span>' + (issueCount + cooldownCount + data.errorSummary.total) + '</span></summary><div class="diag-disclosure-body">';
+    if (issueCount === 0 && cooldownCount === 0 && data.errorSummary.total === 0) {
+      html += '<p class="diag-empty">当前未检测到异常</p>';
+    }
+    for (var h = 0; h < data.health.checks.length; h++) {
+      var check = data.health.checks[h];
+      if (check.level === 'ok') continue;
+      html += row(check.label, state(check.detail, check.level));
+    }
+    for (var c = 0; c < data.platformCooldowns.active.length; c++) {
+      var cooldown = data.platformCooldowns.active[c];
+      html += row('来源冷却', self._escapeHtml(cooldown.platform) + '，剩余 ' + cooldown.remainingSeconds + ' 秒');
+    }
+    var errorLabels = {
+      auth_config: '认证或配置', network: '网络', no_result: '无结果', invalid_url: '无效地址',
+      platform_block: '访问限制', timeout: '超时', unknown: '其他'
+    };
+    for (var e = 0; e < data.errorSummary.byCategory.length; e++) {
+      var err = data.errorSummary.byCategory[e];
+      html += row(errorLabels[err.category] || '其他', err.count + ' 条');
+    }
+    if (data.recent.fallback.length > 0) {
+      html += '<div class="diag-recent">';
+      for (var r = 0; r < Math.min(5, data.recent.fallback.length); r++) {
+        var rec = data.recent.fallback[r];
+        html += '<div class="diag-recent-item">' + self._escapeHtml(rec.time ? new Date(rec.time).toLocaleString('zh-CN', {hour12: false}) : '--') +
+          ' · ' + self._escapeHtml(rec.finalSource || '未知') + '/' + self._escapeHtml(rec.finalQuality || '-') +
+          (rec.reason ? ' · ' + self._escapeHtml(rec.reason) : '') + '</div>';
+      }
+      html += '</div>';
+    }
+    html += '</div></details>';
+
+    html += '<details class="diag-disclosure"><summary>高级事件</summary><div class="diag-disclosure-body diag-event-actions">';
+    html += '<button class="btn btn-secondary btn-sm" onclick="App.toggleTimeline()">🕐 时间线</button>';
+    html += '<button class="btn btn-secondary btn-sm" onclick="App.toggleLogPanel()">📊 日志</button>';
+    html += '</div></details>';
+
+    container.innerHTML = html;
+  },
+
+  async copyDiagnosticsReport() {
+    var resp = await API.getDiagnosticsReport();
+    if (!resp.success || !resp.data || !resp.data.report) {
+      this.showToast('诊断报告生成失败: ' + (resp.error || '未知错误'));
+      return;
+    }
+    var text = resp.data.report;
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        var textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+      }
+      this.showToast('诊断报告已复制');
+    } catch (e) {
+      console.error('[Diagnostics] copy failed:', e);
+      this.showToast('复制失败，请手动复制');
+    }
   },
 
   setupGlobalClicks() {
@@ -975,6 +1135,9 @@ var App = {
       }
     }
 
+    // 队列已更新，刷新队列面板（面板未打开时自动跳过）
+    this.renderPlayQueue();
+
     // ===== 智能音源记忆 (v1.0.78) =====
     // 查询历史记录，看是否有上次成功的音源
     var history = this.findHistoryBySong(song.name, song.singer);
@@ -1323,12 +1486,12 @@ var App = {
           var s = songs[i];
           var coverUrl = s.img || '';
           var coverHtml = coverUrl ? '<img src="' + coverUrl + '" style="width:100%;height:100%;object-fit:cover;" onerror="this.style.display=\'none\'">' : '🎵';
-          html += '<div class="song-item" onclick="App.playFavoriteByIndexWithQueue(' + i + ')">' +
+          html += '<div class="song-item" onclick="App.playFavoriteByIndexWithQueue(' + i + ', \'leaderboard\')">' +
             '<div class="song-number">' + String(i + 1).padStart(2, '0') + '</div>' +
             '<div class="song-cover" style="overflow:hidden;">' + coverHtml + '</div>' +
             '<div class="song-info"><div class="song-title">' + (s.name || '') + '</div><div class="song-meta">' + (s.singer || '') + '</div></div>' +
             '<div class="song-duration">' + (s.interval || '--:--') + '</div>' +
-            '<button class="song-action" onclick="event.stopPropagation();App.playFavoriteByIndexWithQueue(' + i + ')">▶</button></div>';
+            '<button class="song-action" onclick="event.stopPropagation();App.playFavoriteByIndexWithQueue(' + i + ', \'leaderboard\')">▶</button></div>';
         }
         html += '</div>';
         content.innerHTML = html;
@@ -1339,6 +1502,12 @@ var App = {
     if (this._homeBoardSongs && this._homeBoardSongs[bIdx] && this._homeBoardSongs[bIdx][sIdx]) {
       var s = this._homeBoardSongs[bIdx][sIdx];
       this.favoritesResults = this._homeBoardSongs[bIdx];
+      // 建立排行榜播放队列
+      this.playQueue = this._homeBoardSongs[bIdx].map(function(hs) {
+        return { id: hs.source + '_' + hs.songmid, name: hs.name, singer: hs.singer, source: hs.source, cover: hs.img, _raw: { songId: hs.songmid, songmid: String(hs.songmid), source: hs.source, name: hs.name, singer: hs.singer, interval: hs.interval, img: hs.img, albumName: hs.albumName, types: hs.types, hash: hs.hash } };
+      });
+      this.currentQueueIndex = sIdx;
+      this.currentQueueType = 'leaderboard';
       // 构建标准songInfo用于URL获取：source + songmid
       var songObj = {
         id: s.source + '_' + s.songmid,
@@ -2079,8 +2248,8 @@ var App = {
     this.playSongItem(song, song.source);
   },
 
-  // 带队列管理的播放（收藏列表）
-  playFavoriteByIndexWithQueue(index) {
+  // 带队列管理的播放（收藏列表/歌单/排行榜详情复用）
+  playFavoriteByIndexWithQueue(index, listType) {
     if (index < 0 || index >= this.favoritesResults.length) {
       this.showToast('歌曲索引无效');
       return;
@@ -2094,7 +2263,7 @@ var App = {
         interval: fav.interval
       });
       return {
-        id: fav.meta?.songId || fav.meta?.songmid || fav.id,
+        id: fav.meta?.songId || fav.meta?.songmid || fav.songmid || fav.hash || fav.id,
         name: fav.name,
         singer: fav.singer,
         album: fav.meta?.albumName || '',
@@ -2104,7 +2273,7 @@ var App = {
       };
     });
     this.currentQueueIndex = index;
-    this.currentQueueType = 'favorites';
+    this.currentQueueType = listType || 'favorites';
 
     var fav = this.favoritesResults[index];
     var songInfo = Object.assign({}, fav.meta || {}, {
@@ -2114,7 +2283,7 @@ var App = {
       interval: fav.interval
     });
     var song = {
-      id: fav.meta?.songId || fav.meta?.songmid || fav.id,
+      id: fav.meta?.songId || fav.meta?.songmid || fav.songmid || fav.hash || fav.id,
       name: fav.name,
       singer: fav.singer,
       album: fav.meta?.albumName || '',
@@ -2248,6 +2417,7 @@ var App = {
           return { id: s.songmid || s.id, name: s.name, singer: s.singer, source: s.source, cover: s.img, _raw: s };
         });
         self.currentQueueIndex = 0;
+        self.currentQueueType = 'songlist';
         self.playSongFromQueue(0);
       }
     });
@@ -2273,6 +2443,7 @@ var App = {
           return { id: s.source + '_' + s.songmid, name: s.name, singer: s.singer, source: s.source, cover: s.img, _raw: { songId: s.songmid, songmid: String(s.songmid), source: s.source, name: s.name, singer: s.singer, interval: s.interval, img: s.img, albumName: s.albumName, types: s.types, hash: s.hash } };
         });
         self.currentQueueIndex = 0;
+        self.currentQueueType = 'leaderboard';
         self.playSongFromQueue(0);
       }
     });
@@ -2427,7 +2598,7 @@ var App = {
     var self = this;
     var html = '<div class="detail-toolbar"><button class="btn btn-sm btn-secondary" onclick="App._goBackFromSongListDetail()">← 返回</button>' +
       (this._songlistDetailTitle ? '<span class="detail-title">' + this._escapeHtml(this._songlistDetailTitle) + '</span>' : '') +
-      (songs.length ? '<button class="btn btn-sm btn-primary" onclick="App.playFavoriteByIndexWithQueue(0)">▶ 播放全部</button>' : '') + '</div>';
+      (songs.length ? '<button class="btn btn-sm btn-primary" onclick="App.playFavoriteByIndexWithQueue(0, \'songlist\')">▶ 播放全部</button>' : '') + '</div>';
     html += '<div class="song-list">';
     for (var i = 0; i < list.length; i++) {
       var s = list[i];
@@ -2435,13 +2606,13 @@ var App = {
       var dur = s.interval || s.duration || '--:--';
       var coverUrl = s.img || s.picUrl || s.cover || '';
       var coverHtml = coverUrl ? '<img src="' + coverUrl + '" style="width:100%;height:100%;object-fit:cover;" onerror="this.style.display=\'none\'">' : '🎵';
-      html += '<div class="song-item" onclick="App.playFavoriteByIndexWithQueue(' + globalIdx + ')">' +
+      html += '<div class="song-item" onclick="App.playFavoriteByIndexWithQueue(' + globalIdx + ', \'songlist\')">' +
         '<div class="song-number">' + String(globalIdx + 1).padStart(2, '0') + '</div>' +
         '<div class="song-cover" style="overflow:hidden;">' + coverHtml + '</div>' +
         '<div class="song-info"><div class="song-title">' + (s.name || s.title || '') + '</div>' +
         '<div class="song-meta">' + (s.singer || s.artist || '') + ' · ' + (s.source || '') + '</div></div>' +
         '<div class="song-duration">' + dur + '</div>' +
-        '<button class="song-action" onclick="event.stopPropagation();App.playFavoriteByIndexWithQueue(' + globalIdx + ')">▶</button></div>';
+        '<button class="song-action" onclick="event.stopPropagation();App.playFavoriteByIndexWithQueue(' + globalIdx + ', \'songlist\')">▶</button></div>';
     }
     html += '</div>';
     html += '<div id="songlistDetailPagination"></div>';
@@ -2517,13 +2688,13 @@ var App = {
       var dur = s.interval || s.duration || '--:--';
       var coverUrl = s.img || s.picUrl || '';
       var coverHtml = coverUrl ? '<img src="' + coverUrl + '" style="width:100%;height:100%;object-fit:cover;" onerror="this.style.display=\'none\'">' : '🎵';
-      html += '<div class="song-item" onclick="App.playFavoriteByIndexWithQueue(' + globalIdx + ')">' +
+      html += '<div class="song-item" onclick="App.playFavoriteByIndexWithQueue(' + globalIdx + ', \'leaderboard\')">' +
         '<div class="song-number">' + String(globalIdx + 1).padStart(2, '0') + '</div>' +
         '<div class="song-cover" style="overflow:hidden;">' + coverHtml + '</div>' +
         '<div class="song-info"><div class="song-title">' + (s.name || s.title || '') + '</div>' +
         '<div class="song-meta">' + (s.singer || s.artist || '') + ' · ' + (s.source || '') + '</div></div>' +
         '<div class="song-duration">' + dur + '</div>' +
-        '<button class="song-action" onclick="event.stopPropagation();App.playFavoriteByIndexWithQueue(' + globalIdx + ')">▶</button></div>';
+        '<button class="song-action" onclick="event.stopPropagation();App.playFavoriteByIndexWithQueue(' + globalIdx + ', \'leaderboard\')">▶</button></div>';
     }
     html += '</div>';
     html += '<div id="leaderListPagination"></div>';
@@ -2763,6 +2934,20 @@ var App = {
       this.showToast('歌曲索引无效');
       return;
     }
+    // 建立历史播放队列
+    this.playQueue = this.historyResults.map(function(h) {
+      return {
+        id: h.songId || h.id,
+        name: h.title,
+        singer: h.artist,
+        album: h.album || '',
+        source: h.source,
+        cover: h.cover || '',
+        quality: h.quality
+      };
+    });
+    this.currentQueueIndex = index;
+    this.currentQueueType = 'history';
     var h = this.historyResults[index];
     // 构建歌曲对象
     var song = {
@@ -2775,7 +2960,7 @@ var App = {
       quality: h.quality
     };
     this.playSongItem(song, song.source);
-    console.log('[LX] 播放历史记录歌曲: ' + song.name);
+    console.log('[LX] 设置播放队列: history, 当前索引: ' + index + ', 队列长度: ' + this.playQueue.length);
   },
 
   async clearHistory() {
@@ -4229,7 +4414,184 @@ var App = {
   async saveSourcePriority() {
     await API.saveConfig({ sourcePriority: this._sourcePriority });
     console.log('[LX] Source priority saved:', this._sourcePriority);
-  }
+  },
+
+  // ===== 播放队列面板 (v2.6.0) =====
+  toggleQueuePanel() {
+    if (document.body.classList.toggle('queue-open')) {
+      this.renderPlayQueue();
+    }
+  },
+
+  closeQueuePanel() {
+    document.body.classList.remove('queue-open');
+  },
+
+  _queuePanelExists() {
+    return !!document.getElementById('playQueuePanel');
+  },
+
+  _makeQueueState() {
+    var items = Array.isArray(this.playQueue) ? this.playQueue : [];
+    var index = typeof this.currentQueueIndex === 'number' && this.currentQueueIndex >= 0
+      ? this.currentQueueIndex
+      : -1;
+    return PlayQueueState.create(items, index, this.currentQueueType || '');
+  },
+
+  _applyQueueState(next) {
+    this.playQueue = next.items;
+    this.currentQueueIndex = next.currentIndex;
+    this.currentQueueType = next.type;
+    this.renderPlayQueue();
+  },
+
+  _queueTypeLabel(type) {
+    return {
+      favorites: '收藏',
+      artist: '歌手',
+      search: '搜索结果',
+      songlist: '歌单',
+      leaderboard: '排行榜',
+      history: '历史'
+    }[type] || '播放列表';
+  },
+
+  renderPlayQueue() {
+    if (!document.body || !document.body.classList.contains('queue-open')) return;
+    if (!this._queuePanelExists()) return;
+    var state = this._makeQueueState();
+    var typeEl = document.getElementById('queueType');
+    if (typeEl) typeEl.textContent = this._queueTypeLabel(state.type);
+    this._renderQueueList(state);
+    var countEl = document.getElementById('queueUpcomingCount');
+    if (countEl) countEl.textContent = state.items.length + ' 首';
+    var clearBtn = document.getElementById('queueClearBtn');
+    if (clearBtn) clearBtn.disabled = state.currentIndex < 0 || state.currentIndex >= state.items.length - 1;
+  },
+
+  _renderQueueList(state) {
+    var el = document.getElementById('playQueueList');
+    if (!el) return;
+    var items = state.items;
+    var cur = state.currentIndex;
+    var self = this;
+    if (!items || items.length === 0) {
+      el.innerHTML = '<div class="queue-empty">队列为空</div>';
+      return;
+    }
+    var html = '';
+    for (var i = 0; i < items.length; i++) {
+      html += this._queueRowHtml(items[i], i, i === cur);
+    }
+    el.innerHTML = html;
+  },
+
+  _queueRowHtml(item, index, isCurrent) {
+    var title = this._escapeHtml(item.name || item.title || '未知歌曲');
+    var artist = this._escapeHtml(item.singer || item.artist || '');
+    var coverUrl = item.cover || item.img || '';
+    var coverHtml = coverUrl
+      ? '<img src="' + this._escapeHtml(coverUrl) + '" loading="lazy" style="width:100%;height:100%;object-fit:cover;" onerror="this.style.display=\'none\'">'
+      : '🎵';
+    var html = '<div class="queue-item' + (isCurrent ? ' current' : '') + '" data-index="' + index + '"';
+    if (!isCurrent) html += ' onclick="App.playQueueItem(' + index + ')"';
+    html += '>';
+    html += '<div class="queue-item-cover">' + coverHtml + '</div>';
+    html += '<div class="queue-item-info"><div class="queue-item-title" title="' + title + '">' + title + '</div>';
+    if (artist) html += '<div class="queue-item-artist">' + artist + '</div>';
+    html += '</div>';
+    if (isCurrent) {
+      html += '<span class="queue-playing-icon" title="正在播放">♪</span>';
+    } else {
+      html += '<div class="queue-item-actions">';
+      html += '<button class="qia-btn qia-remove" data-tip="移除" onclick="event.stopPropagation();App.removeQueueItem(' + index + ')">✕</button>';
+      html += '<button class="qia-btn qia-drag" data-tip="拖动排序" onpointerdown="App.startQueueDrag(event,' + index + ')" onclick="event.stopPropagation()">⠿</button>';
+      html += '</div>';
+    }
+    html += '</div>';
+    return html;
+  },
+
+  playQueueItem(index) {
+    if (!this.playQueue || index < 0 || index >= this.playQueue.length) return;
+    this.currentQueueIndex = index;
+    this.playSongFromQueue(index);
+    this.renderPlayQueue();
+  },
+
+  removeQueueItem(index) {
+    if (!this.playQueue || index < 0 || index >= this.playQueue.length || index === this.currentQueueIndex) return;
+    var state = this._makeQueueState();
+    var next = PlayQueueState.removeAny(state, index);
+    if (next === state) return;
+    this._applyQueueState(next);
+  },
+
+  moveQueueItem(index, direction) {
+    if (!this.playQueue || index < 0 || index >= this.playQueue.length || index === this.currentQueueIndex) return;
+    var state = this._makeQueueState();
+    var next = PlayQueueState.moveAny(state, index, direction);
+    if (next === state) return;
+    this._applyQueueState(next);
+  },
+
+  clearUpcomingQueue() {
+    var state = this._makeQueueState();
+    var next = PlayQueueState.clearUpcoming(state);
+    if (next.items.length === state.items.length) return;
+    this._applyQueueState(next);
+  },
+
+  startQueueDrag(event, index) {
+    var self = this;
+    var row = event.currentTarget.closest('.queue-item');
+    var list = document.getElementById('playQueueList');
+    if (!row || !list) return;
+    event.preventDefault();
+    row.classList.add('dragging');
+    var startY = event.clientY;
+    var moved = false;
+    var moveHandler = function(ev) {
+      ev.preventDefault();
+      if (!moved) {
+        if (Math.abs(ev.clientY - startY) < 6) return;
+        moved = true;
+        row.classList.add('drag-active');
+      }
+      var cursorY = ev.clientY;
+      var rows = Array.prototype.slice.call(list.children);
+      // 找到指针当前所在的那一行（逐行交换），不含被拖行
+      var target = null;
+      for (var i = 0; i < rows.length; i++) {
+        if (rows[i] === row) continue;
+        var r = rows[i].getBoundingClientRect();
+        if (cursorY < r.top + r.height / 2) { target = rows[i]; break; }
+      }
+      if (target) {
+        if (row.nextElementSibling !== target) list.insertBefore(row, target);
+      } else if (row !== list.lastElementChild) {
+        list.appendChild(row);
+      }
+    };
+    var upHandler = function() {
+      document.removeEventListener('pointermove', moveHandler);
+      document.removeEventListener('pointerup', upHandler);
+      row.classList.remove('dragging', 'drag-active');
+      var orderedAbs = Array.prototype.slice.call(list.children).map(function(c) {
+        return Number(c.dataset.index);
+      });
+      if (orderedAbs.length !== self.playQueue.length) {
+        self.renderPlayQueue();
+        return;
+      }
+      var newItems = orderedAbs.map(function(abs) { return self.playQueue[abs]; });
+      var next = PlayQueueState.create(newItems, self.currentQueueIndex, self.currentQueueType);
+      self._applyQueueState(next);
+    };
+    document.addEventListener('pointermove', moveHandler);
+    document.addEventListener('pointerup', upHandler);
+  },
 };
 
 // ===== 系统主题变化监听 =====
