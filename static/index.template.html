@@ -273,6 +273,11 @@
       <div id="artistContent"></div>
     </div>
 
+    <!-- 浏览器播放器页 -->
+    <div class="page" id="page-player">
+      <div id="playerPageContent"></div>
+    </div>
+
     <!-- 关于页 -->
     <div class="page" id="page-about">
       <h2 class="page-title">ℹ️ 关于</h2>
@@ -296,7 +301,7 @@
         </div>
         <div class="changelog" style="margin-top:20px;">
           <h4>📝 更新日志</h4>
-          <div class="changelog-item"><span class="cl-ver">v2.6.0</span> 2026-08-01<br>• 新增播放队列管理<br>• 新增系统诊断与脱敏报告<br>• 优化播放稳定性</div>
+          <div class="changelog-item"><span class="cl-ver">v2.7.0</span> 2026-08-02<br>• 新增歌手专辑浏览与歌曲分页<br>• 新增浏览器歌词、缓存与点击跳转<br>• 优化播放器视觉与播放队列体验</div>
           <div class="changelog-item"><span class="cl-ver">v2.5.0</span> 2026-07-30<br>• 新增歌手和歌单搜索<br>• 优化详情、封面与歌曲分页体验</div>
           <div class="changelog-item"><span class="cl-ver">v2.4.0</span> 2026-07-28<br>• 优化升级兼容与连接稳定性<br>• 修复旧配置覆盖问题</div>
           <div class="changelog-item"><span class="cl-ver">v2.3.0</span> 2026-07-12<br>• 优化音箱语音播放体验与控制栏状态同步<br>• 优化搜索页搜索与联想词体验</div>
@@ -311,7 +316,7 @@
 <!-- ===== 吸底播放栏 ===== -->
 <footer class="player-bar">
   <div class="player-song">
-    <div class="player-cover" id="playerCover">🎵</div>
+    <button class="player-cover player-open-btn" id="playerCover" type="button" data-tip="打开播放器" aria-label="打开播放器" onclick="App.openPlayerPage()">🎵</button>
     <div class="player-info">
       <div class="p-title" id="playerTitle">未在播放</div>
       <div class="p-artist" id="playerArtist">选择歌曲开始</div>
@@ -333,7 +338,7 @@
     </div>
   </div>
   <div class="player-extras">
-    <button class="pc-btn" id="btnQueue" data-tip="播放队列" onclick="App.toggleQueuePanel()">📃</button>
+    <button class="pc-btn" id="btnQueue" data-tip="播放队列" onclick="App.toggleQueuePanel()">☷</button>
     <span id="volumeIcon" style="font-size:14px;cursor:pointer;" data-tip="静音/取消静音 (M)" onclick="App.toggleMute()">🔊</span>
     <div class="volume-slider" data-tip="音量控制 (↑↓)" onmousedown="App.startVolumeDrag(event)" onclick="App.adjustVolume(event)"><div class="volume-fill" id="volumeFill" style="width:50%"></div></div>
   </div>
@@ -467,6 +472,7 @@
 <script src="js/api.js"></script>
 <script src="js/entity-search.js"></script>
 <script src="js/play-queue.js"></script>
+<script src="js/lyrics.js"></script>
 <script src="js/app.js"></script>
 
 </body>

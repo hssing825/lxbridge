@@ -11,7 +11,6 @@ import type {
   LXUrlParams,
   LXUrlResponse,
   LXLyricParams,
-  LXLyricResponse,
   LXFavoriteItem,
   LxPlaylist,
   QualityBlacklistEntry,
@@ -46,11 +45,16 @@ import {
 import type { EntitySearchBatch, EntitySearchType, EntitySourcePage } from './entity-search';
 import {
   buildArtistDetailPath,
+  buildArtistAlbumsPath,
+  buildAlbumSongsPath,
   buildArtistSongsPath,
+  normalizeArtistAlbums,
+  normalizeAlbumSongs,
   normalizeArtistDetail,
   normalizeArtistSongs,
 } from './artist-detail';
-import type { ArtistDetail, ArtistDetailFallback } from './artist-detail';
+import type { ArtistAlbum, ArtistDetail, ArtistDetailFallback } from './artist-detail';
+import { buildLyricGetPath, buildLyricPostBody, extractLyricText, lyricRequestIds } from './lyric';
 
 export class LXServerClient {
   private configManager: ConfigManager;
@@ -520,6 +524,32 @@ export class LXServerClient {
   async getArtistSongs(source: string, id: string, order: string = 'hot'): Promise<LXSearchResult[]> {
     const payload = await this.simpleGet(buildArtistSongsPath(source, id, order));
     return normalizeArtistSongs(payload, source);
+  }
+
+  async getArtistAlbums(source: string, id: string): Promise<ArtistAlbum[]> {
+    const albums: ArtistAlbum[] = [];
+    const seen = new Set<string>();
+    const limit = 50;
+    for (let page = 1; page <= 20; page++) {
+      const payload = await this.simpleGet(buildArtistAlbumsPath(source, id, page, limit));
+      const batch = normalizeArtistAlbums(payload, source);
+      let added = 0;
+      for (const album of batch) {
+        const key = album.source + ':' + album.id;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        albums.push(album);
+        added++;
+      }
+      // Some lxserver versions ignore page/limit and always return one full list.
+      if (batch.length < limit || added === 0) break;
+    }
+    return albums;
+  }
+
+  async getAlbumSongs(source: string, id: string): Promise<LXSearchResult[]> {
+    const payload = await this.simpleGet(buildAlbumSongsPath(source, id));
+    return normalizeAlbumSongs(payload, source);
   }
 
   // ===== 异常URL检测 (v1.8.22) =====
@@ -1006,36 +1036,47 @@ export class LXServerClient {
 
   // ===== 获取歌词 =====
 
-  async getLyric(params: LXLyricParams): Promise<string | null> {
+  async getLyric(params: LXLyricParams): Promise<{ lyric: string; available: boolean }> {
     try {
       const token = await this.getToken();
       const baseUrl = this.getBaseUrl();
-
-      const body = JSON.stringify({
-        id: params.id,
-        source: params.source,
-      });
-
-      const resp = await fetch(baseUrl + '/api/music/lyric', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-user-token': token,
-          'x-user-name': this.config!.username,
-        },
-        body,
-      });
-
-      if (!resp.ok) return null;
-
-      const text = await resp.text();
-      const data: LXLyricResponse = JSON.parse(text);
-      if (data.success && data.data && data.data.lyric) {
-        return data.data.lyric;
+      let available = false;
+      let getSupported = false;
+      const ids = lyricRequestIds(params);
+      for (const id of ids) {
+        const resp = await fetch(baseUrl + buildLyricGetPath(params, id), {
+          headers: {
+            'x-user-token': token,
+            'x-user-name': this.config!.username,
+          },
+        });
+        if (!resp.ok) continue;
+        getSupported = true;
+        available = true;
+        const lyric = extractLyricText(JSON.parse(await resp.text()));
+        if (lyric) return { lyric, available: true };
       }
-      return null;
+
+      // Only use the legacy endpoint when this lxserver does not provide the GET API.
+      if (!getSupported && ids.length) {
+        const resp = await fetch(baseUrl + '/api/music/lyric', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-user-token': token,
+            'x-user-name': this.config!.username,
+          },
+          body: JSON.stringify(buildLyricPostBody(params, ids[0])),
+        });
+        if (resp.ok) {
+          available = true;
+          const lyric = extractLyricText(JSON.parse(await resp.text()));
+          if (lyric) return { lyric, available: true };
+        }
+      }
+      return { lyric: '', available };
     } catch {
-      return null;
+      return { lyric: '', available: false };
     }
   }
 

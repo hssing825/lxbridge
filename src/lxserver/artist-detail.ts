@@ -16,6 +16,16 @@ export interface ArtistDetail {
   source: string;
 }
 
+export interface ArtistAlbum {
+  id: string;
+  name: string;
+  cover: string;
+  publishDate: string;
+  songCount: number;
+  source: string;
+  _raw: any;
+}
+
 const ARTIST_SOURCES = ['tx', 'wy'];
 
 function assertArtistSource(source: string): void {
@@ -27,6 +37,12 @@ function assertArtistSource(source: string): void {
 function requireArtistId(id: string): string {
   const value = String(id || '').trim();
   if (!value) throw new Error('Artist id is required');
+  return value;
+}
+
+function requireAlbumId(id: string): string {
+  const value = String(id || '').trim();
+  if (!value) throw new Error('Album id is required');
   return value;
 }
 
@@ -78,6 +94,21 @@ export function buildArtistSongsPath(source: string, id: string, order: string =
     '&order=' + encodeURIComponent(normalizedOrder);
 }
 
+export function buildArtistAlbumsPath(source: string, id: string, page: number = 1, limit: number = 20): string {
+  assertArtistSource(source);
+  const normalizedPage = Math.max(1, Math.floor(Number(page) || 1));
+  const normalizedLimit = Math.max(1, Math.min(50, Math.floor(Number(limit) || 20)));
+  return '/api/music/artistAlbums?source=' + encodeURIComponent(source) +
+    '&id=' + encodeURIComponent(requireArtistId(id)) +
+    '&page=' + normalizedPage + '&limit=' + normalizedLimit;
+}
+
+export function buildAlbumSongsPath(source: string, id: string): string {
+  assertArtistSource(source);
+  return '/api/music/albumSongs?source=' + encodeURIComponent(source) +
+    '&id=' + encodeURIComponent(requireAlbumId(id));
+}
+
 export function normalizeArtistDetail(
   payload: any,
   source: string,
@@ -113,6 +144,51 @@ export function normalizeArtistSongs(payload: any, source: string): LXSearchResu
       albumId: text(raw.albumId),
       duration: durationSeconds(raw.interval ?? raw.duration),
       cover: text(raw.img ?? raw.cover ?? raw.picUrl),
+      source: text(raw.source) || source,
+      quality,
+      lyricId: text(raw.lrc ?? raw.lyricId),
+      _raw: raw,
+    };
+  }).filter((song): song is LXSearchResult => song !== null);
+}
+
+export function normalizeArtistAlbums(payload: any, source: string): ArtistAlbum[] {
+  assertArtistSource(source);
+  return extractList(payload).map((raw: any): ArtistAlbum | null => {
+    if (!raw || typeof raw !== 'object') return null;
+    const id = text(raw.albumMID ?? raw.albumMid ?? raw.albumId ?? raw.id ?? raw.mid);
+    const name = text(raw.albumName ?? raw.name ?? raw.title);
+    if (!id || !name) return null;
+    return {
+      id,
+      name,
+      cover: text(raw.albumPic ?? raw.picUrl ?? raw.img ?? raw.cover ?? raw.pic),
+      publishDate: text(raw.publishDate ?? raw.publishTime ?? raw.date ?? raw.time),
+      songCount: count(raw.songNum ?? raw.songCount ?? raw.size ?? raw.total ?? raw.count),
+      source: text(raw.source) || source,
+      _raw: raw,
+    };
+  }).filter((album): album is ArtistAlbum => album !== null);
+}
+
+export function normalizeAlbumSongs(payload: any, source: string): LXSearchResult[] {
+  assertArtistSource(source);
+  return extractList(payload).map((raw: any): LXSearchResult | null => {
+    if (!raw || typeof raw !== 'object') return null;
+    const id = text(raw.songmid ?? raw.songId ?? raw.id ?? raw.mid);
+    const name = text(raw.name ?? raw.title ?? raw.songName);
+    if (!id || !name) return null;
+    const types = Array.isArray(raw.types) ? raw.types : [];
+    const quality = types.length ? text(types[types.length - 1]?.type ?? types[types.length - 1]) : '';
+    return {
+      id,
+      name,
+      singer: text(raw.singer ?? raw.artist ?? raw.author),
+      album: text(raw.albumName ?? raw.album),
+      albumId: text(raw.albumId ?? raw.albumMID ?? raw.albumMid),
+      duration: durationSeconds(raw.interval ?? raw.duration),
+      // Album endpoints may include both an album image and a per-song image.
+      cover: text(raw.songPic ?? raw.songImg ?? raw.coverPic ?? raw.picUrl ?? raw.cover ?? raw.img ?? raw.albumPic),
       source: text(raw.source) || source,
       quality,
       lyricId: text(raw.lrc ?? raw.lyricId),

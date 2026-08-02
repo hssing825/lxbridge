@@ -1,7 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/songloft-org/plugin-toolchain/main/schemas/plugin.schema.json",
   "name": "LX音乐桥",
-  "version": "2.6.1",
+  "version": "2.7.0",
   "description": "连接lxserver与MIOT插件",
   "author": "soundforge",
   "homepage": "https://github.com/youxikexue/lxbridge",

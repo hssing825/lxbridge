@@ -28,6 +28,7 @@ const css = readFileSync(join(staticDir, 'css', 'style.css'), 'utf8');
 const apiJs = readFileSync(join(staticDir, 'js', 'api.js'), 'utf8');
 const entitySearchJs = readFileSync(join(staticDir, 'js', 'entity-search.js'), 'utf8');
 const playQueueJs = readFileSync(join(staticDir, 'js', 'play-queue.js'), 'utf8');
+const lyricsJs = readFileSync(join(staticDir, 'js', 'lyrics.js'), 'utf8');
 const appJs = readFileSync(join(staticDir, 'js', 'app.js'), 'utf8');
 
 // 替换插件信息占位符
@@ -58,6 +59,11 @@ html = html.replace(
 );
 
 html = html.replace(
+  '<script src="js/lyrics.js"></script>',
+  '<script>\n' + lyricsJs + '\n</script>'
+);
+
+html = html.replace(
   '<script src="js/app.js"></script>',
   '<script>\n' + appJs + '\n</script>'
 );
@@ -69,4 +75,5 @@ console.log('  CSS inlined:', css.length, 'bytes');
 console.log('  api.js inlined:', apiJs.length, 'bytes');
 console.log('  entity-search.js inlined:', entitySearchJs.length, 'bytes');
 console.log('  play-queue.js inlined:', playQueueJs.length, 'bytes');
+console.log('  lyrics.js inlined:', lyricsJs.length, 'bytes');
 console.log('  app.js inlined:', appJs.length, 'bytes');

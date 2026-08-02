@@ -105,6 +105,12 @@ export interface LXUrlResponse {
 export interface LXLyricParams {
   id: string;
   source: string;
+  lyricId?: string;
+  name?: string;
+  singer?: string;
+  interval?: string | number;
+  albumId?: string;
+  raw?: Record<string, unknown>;
 }
 
 export interface LXLyricResponse {

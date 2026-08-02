@@ -1,8 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  buildAlbumSongsPath,
+  buildArtistAlbumsPath,
   buildArtistDetailPath,
   buildArtistSongsPath,
+  normalizeAlbumSongs,
+  normalizeArtistAlbums,
   normalizeArtistDetail,
   normalizeArtistSongs,
 } from '../src/lxserver/artist-detail.ts';
@@ -95,4 +99,66 @@ test('normalizes tx and wy artist songs for playback without truncation', () => 
   });
   assert.equal(songs[1].source, 'wy');
   assert.equal(songs[1].duration, 120);
+});
+
+test('builds encoded artist album paths and rejects unsupported sources', () => {
+  assert.equal(
+    buildArtistAlbumsPath('tx', 'mid / 1', 2, 30),
+    '/api/music/artistAlbums?source=tx&id=mid%20%2F%201&page=2&limit=30',
+  );
+  assert.equal(
+    buildAlbumSongsPath('wy', 'album / 7'),
+    '/api/music/albumSongs?source=wy&id=album%20%2F%207',
+  );
+  assert.throws(() => buildArtistAlbumsPath('kg', '1'), /does not support/);
+  assert.throws(() => buildAlbumSongsPath('tx', ''), /Album id is required/);
+});
+
+test('normalizes artist albums and album songs for the existing playback path', () => {
+  const albums = normalizeArtistAlbums({
+    data: {
+      list: [
+        { albumMID: 'tx-album', albumName: '专辑甲', albumPic: 'album.jpg', publishDate: '2026-01-02', songNum: 12 },
+        { id: 2, name: '专辑乙', picUrl: 'album-2.jpg', size: 8 },
+        { id: 'bad' },
+      ],
+    },
+  }, 'tx');
+  assert.deepEqual(albums, [
+    { id: 'tx-album', name: '专辑甲', cover: 'album.jpg', publishDate: '2026-01-02', songCount: 12, source: 'tx', _raw: { albumMID: 'tx-album', albumName: '专辑甲', albumPic: 'album.jpg', publishDate: '2026-01-02', songNum: 12 } },
+    { id: '2', name: '专辑乙', cover: 'album-2.jpg', publishDate: '', songCount: 8, source: 'tx', _raw: { id: 2, name: '专辑乙', picUrl: 'album-2.jpg', size: 8 } },
+  ]);
+
+  const songs = normalizeAlbumSongs({ list: [{ id: 'song-1', title: '专辑歌曲', artist: '歌手甲', album: '专辑甲', duration: '04:00', cover: 'song.jpg' }] }, 'wy');
+  assert.equal(songs.length, 1);
+  assert.deepEqual(songs[0], {
+    id: 'song-1',
+    name: '专辑歌曲',
+    singer: '歌手甲',
+    album: '专辑甲',
+    albumId: '',
+    duration: 240,
+    cover: 'song.jpg',
+    source: 'wy',
+    quality: '',
+    lyricId: '',
+    _raw: { id: 'song-1', title: '专辑歌曲', artist: '歌手甲', album: '专辑甲', duration: '04:00', cover: 'song.jpg' },
+  });
+});
+
+test('prefers a song-specific cover over an album cover in album song results', () => {
+  const songs = normalizeAlbumSongs({
+    list: [{
+      songmid: 'song-2',
+      name: '歌曲封面优先',
+      singer: '歌手甲',
+      albumName: '专辑甲',
+      albumPic: 'album-cover.jpg',
+      songPic: 'song-cover.jpg',
+      img: 'album-cover.jpg',
+      interval: '03:20',
+    }],
+  }, 'tx');
+
+  assert.equal(songs[0].cover, 'song-cover.jpg');
 });
