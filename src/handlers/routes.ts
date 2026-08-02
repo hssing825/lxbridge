@@ -401,6 +401,30 @@ export function registerHandlers(
     }
   });
 
+  router.get('/api/artist/albums', async (req: HTTPRequest) => {
+    try {
+      const q = parseQuery(req.query);
+      if (!q.source || !q.id) return errorResponse('缺少歌手来源或 ID', 400);
+      const albums = await lxClient.getArtistAlbums(q.source, q.id);
+      return jsonResponse({ success: true, data: albums });
+    } catch (e: any) {
+      const message = e.message || String(e);
+      return errorResponse(message, message.indexOf('does not support') !== -1 ? 400 : 500);
+    }
+  });
+
+  router.get('/api/album/songs', async (req: HTTPRequest) => {
+    try {
+      const q = parseQuery(req.query);
+      if (!q.source || !q.id) return errorResponse('缺少专辑来源或 ID', 400);
+      const songs = await lxClient.getAlbumSongs(q.source, q.id);
+      return jsonResponse({ success: true, data: songs });
+    } catch (e: any) {
+      const message = e.message || String(e);
+      return errorResponse(message, message.indexOf('does not support') !== -1 ? 400 : 500);
+    }
+  });
+
   // ── 获取单曲播放URL ──
   router.post('/api/song/url', async (req: HTTPRequest) => {
     try {
@@ -411,6 +435,27 @@ export function registerHandlers(
       return jsonResponse({ success: true, data: result });
     } catch (e: any) {
       return errorResponse(e.message);
+    }
+  });
+
+  router.post('/api/song/lyric', async (req: HTTPRequest) => {
+    try {
+      const body = getBody(req);
+      const song = body.song && typeof body.song === 'object' ? body.song : body;
+      if (!song.id || !song.source) return errorResponse('缺少歌曲 ID 或来源', 400);
+      const result = await lxClient.getLyric({
+        id: String(song.id),
+        source: String(song.source),
+        lyricId: String(song.lyricId || song.lrc || ''),
+        name: String(song.name || song.title || ''),
+        singer: String(song.singer || song.artist || ''),
+        interval: song.interval || song.duration || '',
+        albumId: String(song.albumId || ''),
+        raw: song.raw && typeof song.raw === 'object' ? song.raw : (song._raw && typeof song._raw === 'object' ? song._raw : undefined),
+      });
+      return jsonResponse({ success: true, data: result });
+    } catch (e: any) {
+      return errorResponse(e.message || String(e));
     }
   });
 
