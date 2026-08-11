@@ -136,7 +136,6 @@ var App = {
   speakerPlaybackEndPending: false,
   speakerNextInFlight: false,
   speakerPauseRequested: false,
-  speakerObservedPlaying: false,
   speakerStatusRequestInFlight: false,
   browserPlaybackSnapshot: null,
   speakerPlaybackSnapshots: {},  // 仅记录本插件推送到各音箱的播放信息
@@ -470,7 +469,6 @@ var App = {
   async refreshSpeakerPlaybackState(clearWhenInactive) {
     if (this.isBrowserMode || !this.currentDevice) return;
     if (clearWhenInactive) {
-      this.speakerObservedPlaying = false;
       this.speakerPlaybackEndPending = false;
     }
     var resp = await this.fetchSpeakerStatus();
@@ -480,7 +478,6 @@ var App = {
       return;
     }
     var status = resp.data || resp;
-    this.observeSpeakerState(status.state);
     this.isPlaying = status.state === 'playing';
     if (status.volume !== undefined && status.volume >= 0) {
       this.currentVolume = Math.round(status.volume);
@@ -1040,24 +1037,11 @@ var App = {
     var self = this;
     var hasQueue = Array.isArray(this.playQueue) && this.playQueue.length > 0 && this.currentQueueIndex >= 0;
     var request = hasQueue
-      ? Promise.resolve(this.playNext())
+      ? this.playNext()
       : this.controlPlayback('next', { _nativeSpeakerNext: true });
     Promise.resolve(request).finally(function() {
       self.speakerNextInFlight = false;
     });
-  },
-
-  isSpeakerTerminalState(state) {
-    return state === 'idle' || state === 'stopped' || state === 'ended' || state === 'completed';
-  },
-
-  observeSpeakerState(state) {
-    var previousObservedPlaying = this.speakerObservedPlaying;
-    if (state === 'playing') this.speakerObservedPlaying = true;
-    if (previousObservedPlaying && this.isSpeakerTerminalState(state) &&
-        !this.speakerPauseRequested && Date.now() >= this.speakerPlayStateProtectedUntil) {
-      this.speakerPlaybackEndPending = true;
-    }
   },
 
   togglePlay() {
@@ -1121,7 +1105,6 @@ var App = {
     // 音箱播放模式 — 传递当前设备信息
     if (action === 'pause') {
       this.speakerPauseRequested = true;
-      this.speakerObservedPlaying = false;
     }
     if (action === 'play' || action === 'next') this.speakerPauseRequested = false;
     if (action === 'stop') {
@@ -1151,7 +1134,6 @@ var App = {
         this.resetNowPlaying();
         this.stopStatusSync();
       }
-      if (action === 'play') this.speakerObservedPlaying = true;
       if (action === 'set_volume') this.currentVolume = (params && params.volume) || 50;
       this.updatePlayButton();
       document.getElementById('volumeFill').style.width = this.currentVolume + '%';
@@ -1172,7 +1154,7 @@ var App = {
     }
   },
 
-  playNext() {
+  async playNext() {
     if (this.playQueue.length === 0) {
       this.showToast('播放列表为空');
       return;
@@ -1216,8 +1198,8 @@ var App = {
 
     if (nextIndex >= 0 && nextIndex < this.playQueue.length) {
       this.currentQueueIndex = nextIndex;
-      this.playSongFromQueue(nextIndex);
       console.log('[LX] 播放模式: ' + this.playMode + ', 下一首索引: ' + nextIndex);
+      return this.playSongFromQueue(nextIndex);
     }
   },
 
@@ -1401,8 +1383,6 @@ var App = {
       this.isPlaying = true; this.updatePlayButton();
       this.speakerPauseRequested = false;
       this.speakerPlaybackEndPending = false;
-      // 等状态接口确认真正进入 playing，再允许结束检测推进下一首。
-      this.speakerObservedPlaying = false;
       this.speakerPlayStateProtectedUntil = Date.now() + 5000;
       this.updateNowPlaying(song, usedSource, usedQuality);
       this.showToast('正在播放: ' + song.name + ' - ' + song.singer);
@@ -4000,7 +3980,6 @@ var App = {
     // 更新播放状态 (v1.0.82: 后端返回state字段)
     if (status.state !== undefined) {
       var isNowPlaying = status.state === 'playing';
-      this.observeSpeakerState(status.state);
       var keepPushedPlayingState = this.isPlaying && !isNowPlaying && Date.now() < this.speakerPlayStateProtectedUntil;
       if (this.isPlaying !== isNowPlaying && !keepPushedPlayingState) {
         this.isPlaying = isNowPlaying;

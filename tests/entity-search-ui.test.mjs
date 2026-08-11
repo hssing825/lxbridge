@@ -224,11 +224,17 @@ test('speaker playback advances once after a completed song and uses the shared 
   assert.match(app, /speakerNextInFlight/);
   assert.match(app, /controlPlayback\('next'\)/);
   assert.match(app, /speakerPauseRequested/);
-  assert.match(app, /speakerObservedPlaying/);
-  assert.match(app, /state === 'idle' \|\| state === 'stopped' \|\| state === 'ended'/);
   assert.match(app, /refreshSpeakerPlaybackState[\s\S]*?advanceSpeakerAfterCompletion\(status\.state\)/);
   assert.match(app, /speakerStatusRequestInFlight/);
   assert.match(app, /fetchSpeakerStatus\(\)/);
+});
+
+test('speaker queue advance waits for the queued push and elapsed song duration', () => {
+  const app = readFileSync('static/js/app.js', 'utf8');
+  assert.match(app, /return this\.playSongFromQueue\(nextIndex\)/);
+  assert.match(app, /var reachedEnd = elapsed >= dur;[\s\S]*?this\.speakerPlaybackEndPending = true/);
+  assert.doesNotMatch(app, /previousObservedPlaying && this\.isSpeakerTerminalState/);
+  assert.doesNotMatch(app, /observeSpeakerState\(status\.state\)/);
 });
 
 test('speaker playback preserves songlist durations and prefers resolved song duration', () => {
