@@ -3139,9 +3139,9 @@ var App = {
     var needsSpeakerProxy = usedSource === 'tx' ||
       lowerSpeakerUrl.includes('qqmusic.qq.com') ||
       lowerSpeakerUrl.includes('music.qq.com');
+    var resolvedSong = (fallbackResp.data && fallbackResp.data.song) || {};
     if (needsSpeakerProxy) {
       try {
-        var resolvedSong = fallbackResp.data.song || {};
         var resolvedDuration = resolvedSong.duration || song.duration || song.interval || 0;
         if (typeof resolvedDuration === 'string') resolvedDuration = this.parseDuration(resolvedDuration);
         var stableSongId = resolvedSong.songmid || resolvedSong.id || song.songmid || song.id || song.name;
@@ -3179,12 +3179,17 @@ var App = {
       this.showToast('正在播放: ' + song.name + ' - ' + song.singer);
       // 记录播放开始时间，用于进度追踪 (v1.0.82)
       this.songStartedAt = Date.now() / 1000;
-      // 时长来源: song.interval("03:58") → song.duration → 240默认值
+      // 时长优先使用解析后歌曲的标注时长，再回退到列表歌曲信息。
+      var durationCandidates = [resolvedSong.duration, resolvedSong.interval, song.duration, song.interval];
       var dur = 0;
-      if (typeof song.interval === 'string') {
-        dur = this.parseDuration(song.interval);
-      } else {
-        dur = parseInt(song.duration) || parseInt(song.interval) || 0;
+      for (var durationIndex = 0; durationIndex < durationCandidates.length; durationIndex++) {
+        var durationValue = durationCandidates[durationIndex];
+        if (typeof durationValue === 'string') {
+          dur = this.parseDuration(durationValue);
+        } else {
+          dur = parseInt(durationValue) || 0;
+        }
+        if (dur > 0) break;
       }
       if (!dur || dur <= 0) dur = 240; // 默认4分钟兜底
       this.songDuration = dur;
@@ -3613,7 +3618,8 @@ var App = {
         if (songs.length > 0) {
           this.favoritesResults = songs;
           this.playQueue = songs.map(function(s) {
-            return { id: s.id, name: s.name, singer: s.singer, source: s.source, cover: s.meta?.picUrl, _raw: s.meta };
+            var duration = s.interval || s.duration || s.meta?.interval || s.meta?.duration || 0;
+            return { id: s.id, name: s.name, singer: s.singer, source: s.source, cover: s.meta?.picUrl, duration: duration, interval: s.interval || duration, _raw: s.meta };
           });
           this.currentQueueIndex = 0;
           this.currentQueueType = 'favorites';
@@ -4553,11 +4559,13 @@ var App = {
     }
     // 设置播放队列（转换为统一格式）
     this.playQueue = this.favoritesResults.map(function(fav) {
+      var duration = fav.interval || fav.duration || fav.meta?.interval || fav.meta?.duration || 0;
       var songInfo = Object.assign({}, fav.meta || {}, {
         name: fav.name,
         singer: fav.singer,
         source: fav.source,
-        interval: fav.interval
+        interval: fav.interval || fav.meta?.interval || duration,
+        duration: duration
       });
       return {
         id: fav.meta?.songId || fav.meta?.songmid || fav.songmid || fav.hash || fav.id,
@@ -4566,6 +4574,8 @@ var App = {
         album: fav.meta?.albumName || '',
         source: fav.source,
         cover: EntitySearchModel.resolveSongCover(fav),
+        duration: duration,
+        interval: fav.interval || fav.meta?.interval || duration,
         _raw: songInfo
       };
     });
@@ -4573,11 +4583,13 @@ var App = {
     this.currentQueueType = listType || 'favorites';
 
     var fav = this.favoritesResults[index];
+    var duration = fav.interval || fav.duration || fav.meta?.interval || fav.meta?.duration || 0;
     var songInfo = Object.assign({}, fav.meta || {}, {
       name: fav.name,
       singer: fav.singer,
       source: fav.source,
-      interval: fav.interval
+      interval: fav.interval || fav.meta?.interval || duration,
+      duration: duration
     });
     var song = {
       id: fav.meta?.songId || fav.meta?.songmid || fav.songmid || fav.hash || fav.id,
@@ -4586,6 +4598,8 @@ var App = {
       album: fav.meta?.albumName || '',
       source: fav.source,
       cover: EntitySearchModel.resolveSongCover(fav),
+      duration: duration,
+      interval: fav.interval || fav.meta?.interval || duration,
       _raw: songInfo
     };
     this.playSongItem(song, song.source);
@@ -4711,7 +4725,8 @@ var App = {
         var songs = resp.data;
         self.favoritesResults = songs;
         self.playQueue = songs.map(function(s) {
-          return { id: s.songmid || s.id, name: s.name, singer: s.singer, source: s.source, cover: s.img, _raw: s };
+          var duration = s.interval || s.duration || 0;
+          return { id: s.songmid || s.id, name: s.name, singer: s.singer, source: s.source, cover: s.img, duration: duration, interval: s.interval || duration, _raw: s };
         });
         self.currentQueueIndex = 0;
         self.currentQueueType = 'songlist';

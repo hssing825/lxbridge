@@ -22,6 +22,6 @@
     "/api/proxy/play"
   ],
   "updateUrl": "https://raw.githubusercontent.com/youxikexue/lxbridge/master/manifest.json",
-  "entryHash": "b2419538f581ea5d8879844918e2fa23cd5cc0a9f77e9c410077ba32be056ffd",
-  "zipHash": "c734087d2f13e418f06105534508e49c8f88be37497d0bf7c8db24a379ee268d"
+  "entryHash": "6cb9a677716df68446dca835f8ba06af991fd135c2ddd9c792bc45badee7ad12",
+  "zipHash": "d83e0673fe419df3126d2f78069247fcacf5fce2e4cb53e305048579ce851a91"
 }

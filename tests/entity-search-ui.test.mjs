@@ -231,6 +231,13 @@ test('speaker playback advances once after a completed song and uses the shared 
   assert.match(app, /fetchSpeakerStatus\(\)/);
 });
 
+test('speaker playback preserves songlist durations and prefers resolved song duration', () => {
+  const app = readFileSync('static/js/app.js', 'utf8');
+  assert.match(app, /var duration = fav\.interval\s*\|\|\s*fav\.duration/);
+  assert.match(app, /duration:\s*duration,\s*interval:\s*fav\.interval/);
+  assert.match(app, /var durationCandidates = \[resolvedSong\.duration, resolvedSong\.interval, song\.duration, song\.interval\]/);
+});
+
 test('returning from the player preserves an open artist detail', () => {
   const app = readFileSync('static/js/app.js', 'utf8');
   assert.match(app, /pageName === 'artist' && !preserveContent/);
